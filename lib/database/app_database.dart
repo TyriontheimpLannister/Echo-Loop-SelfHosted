@@ -103,6 +103,14 @@ class AppDatabase extends _$AppDatabase {
         await _createCustomIndexes(m);
       },
       beforeOpen: (details) async {
+        // 某些旧开发版可能已推进 user_version，但 v36 的字幕大字段未真正落库。
+        // AI 转录会先写该列；启动时幂等补列，避免 UI 标记有字幕而内容未保存。
+        await _addColumnIfNotExists('audio_items', 'transcript_srt', 'TEXT');
+        await _addColumnIfNotExists(
+          'audio_items',
+          'word_timestamps_json',
+          'TEXT',
+        );
         // v38 发布过程里可能出现过 user_version 已到 38，但 podcast 列未真正落库
         // 的开发/测试数据库。启动时再做一次幂等补列，避免订阅时插入 episode 崩溃。
         await _ensurePodcastColumns();

@@ -313,10 +313,7 @@ class SentenceAiNotifier {
     }
 
     // L3: 流式 API 调用
-    if (accessToken == null || accessToken.isEmpty) {
-      AppLogger.log('SentenceAI', '翻译 L3 需要登录，未发现 Supabase access token');
-      throw const AiFeatureAuthRequiredException();
-    }
+    // [自用补丁:local-translation] 自托管后端不要求 Supabase token。
     await _beforeApiRequest?.call(
       PremiumFeature.aiTranslation,
       respectLocalQuotaReset: respectLocalQuotaReset,
@@ -341,7 +338,7 @@ class SentenceAiNotifier {
         previous: previous,
         next: next,
         targetLanguage: targetLanguage,
-        accessToken: accessToken,
+        accessToken: accessToken ?? '',
       ),
     );
     yield* pending.subscribe();
@@ -370,7 +367,7 @@ class SentenceAiNotifier {
             previousText: previous,
             nextText: next,
             targetLanguage: targetLanguage,
-            accessToken: accessToken,
+            accessToken: accessToken ?? '',
             cancelToken: pending.cancelToken,
           )) {
             pending.add(frame.translation);
@@ -477,10 +474,7 @@ class SentenceAiNotifier {
     }
 
     // L3: 流式 API 调用
-    if (accessToken == null || accessToken.isEmpty) {
-      AppLogger.log('SentenceAI', '解析 L3 需要登录，未发现 Supabase access token');
-      throw const AiFeatureAuthRequiredException();
-    }
+    // [自用补丁:local-analysis] 自托管后端不要求 Supabase token。
     await _beforeApiRequest?.call(
       PremiumFeature.aiAnalysis,
       respectLocalQuotaReset: respectLocalQuotaReset,
@@ -503,7 +497,7 @@ class SentenceAiNotifier {
         l2Type: l2Type,
         text: text,
         targetLanguage: targetLanguage,
-        accessToken: accessToken,
+        accessToken: accessToken ?? '',
       ),
     );
     yield* pending.subscribe();
@@ -528,7 +522,7 @@ class SentenceAiNotifier {
           await for (final frame in _apiClient.analyzeStream(
             text,
             targetLanguage: targetLanguage,
-            accessToken: accessToken,
+            accessToken: accessToken ?? '',
             cancelToken: pending.cancelToken,
           )) {
             pending.add(frame.analysis);
@@ -638,10 +632,7 @@ class SentenceAiNotifier {
     }
 
     // L3: 流式 API 调用
-    if (accessToken == null || accessToken.isEmpty) {
-      AppLogger.log('SenseGroup', 'L3 需要登录，未发现 Supabase access token');
-      throw const AiFeatureAuthRequiredException();
-    }
+    // [自用补丁:local-sense-group] 自托管后端不要求 Supabase token。
     await _beforeApiRequest?.call(
       PremiumFeature.aiSenseGroup,
       respectLocalQuotaReset: respectLocalQuotaReset,
@@ -661,7 +652,7 @@ class SentenceAiNotifier {
         pending,
         hash: hash,
         text: text,
-        accessToken: accessToken,
+        accessToken: accessToken ?? '',
       ),
     );
     yield* pending.subscribe();
@@ -682,7 +673,7 @@ class SentenceAiNotifier {
         try {
           await for (final frame in _apiClient.senseGroupsStream(
             text,
-            accessToken: accessToken,
+            accessToken: accessToken ?? '',
             cancelToken: pending.cancelToken,
           )) {
             pending.add(frame.result);

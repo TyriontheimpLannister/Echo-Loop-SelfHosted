@@ -680,6 +680,14 @@ class AudioListTile extends ConsumerWidget {
               icon: const Icon(Icons.ios_share, size: 20),
               label: l10n.exportAudio,
             ),
+          // HomeSchooling 互通：一键转为听写包，仅供听写任务使用。
+          if (audioItem.isAudioReady)
+            appPopupMenuItem(
+              context,
+              value: 'exportHomeschooling',
+              icon: const Icon(Icons.school_outlined, size: 20),
+              label: '发送到 HomeSchooling 听写',
+            ),
           // 学习材料导出 PDF：只读派生内容（字幕+笔记），官方音频也可用，仅要求有字幕
           if (audioItem.hasTranscript)
             appPopupMenuItem(
@@ -772,6 +780,8 @@ class AudioListTile extends ConsumerWidget {
             onManageTags?.call();
           } else if (value == 'export') {
             exportAudioItem(context, ref, audioItem);
+          } else if (value == 'exportHomeschooling') {
+            exportHomeSchoolingPackage(context, ref, audioItem);
           } else if (value == 'exportPdf') {
             context.push(AppRoutes.pdfPreview, extra: _latestAudioItem(ref));
           } else if (value == 'togglePause') {

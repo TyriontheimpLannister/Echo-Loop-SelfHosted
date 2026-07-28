@@ -11,7 +11,7 @@ import '../features/usage/usage_event.dart';
 import '../features/usage/usage_providers.dart';
 import '../utils/app_data_dir.dart';
 import 'package:universal_io/io.dart';
-import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../database/providers.dart';
 import '../features/audio_import/audio_finalization_service.dart';
@@ -451,16 +451,12 @@ class TranscriptionTaskManager extends _$TranscriptionTaskManager {
     final wordsJson = (transcript.words != null && transcript.words!.isNotEmpty)
         ? encodeWordTimestamps(transcript.words!)
         : null;
-    try {
-      final audioDao = ref.read(audioItemDaoProvider);
-      await audioDao.saveTranscriptContent(
-        audioItem.id,
-        srt: srtContent,
-        wordTimestampsJson: wordsJson,
-      );
-    } catch (e) {
-      debugPrint('保存字幕内容失败: $e');
-    }
+    final audioDao = ref.read(audioItemDaoProvider);
+    await audioDao.saveTranscriptContent(
+      audioItem.id,
+      srt: srtContent,
+      wordTimestampsJson: wordsJson,
+    );
 
     // 更新 AudioItem 模型列（transcriptPath 置 null，内容在 DB 列）
     ref

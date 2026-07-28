@@ -67,6 +67,16 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
+    // [自用补丁] 关闭 lint 检查。lint 缓存 jar 在 Windows 并行构建下会触发
+    // "另一个程序正在使用此文件" 的文件锁冲突（:file_picker:lintVitalAnalyzeRelease
+    // 等模块级任务），且对个人自用分发 APK 无实际意义。
+    // checkDependencies=false 直接让 Gradle 不生成/执行各 library 模块的 lintVital* 任务。
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+        checkDependencies = false
+    }
+
     buildTypes {
         release {
             // release 构建启用 R8（Flutter/AGP 默认行为，见 build 产物

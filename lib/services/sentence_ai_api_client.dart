@@ -1,6 +1,6 @@
 /// AI 句子翻译/解析 API 客户端
 ///
-/// 封装与后端 `/api/v1/ai/` 的通信，用于获取句子的翻译和语法解析。
+/// 封装与后端 `/api/v1/stream/` 的通信，用于获取句子的翻译和语法解析。
 /// 基于 Dio，receiveTimeout 设为 60 秒以适应 LLM 响应延迟。
 library;
 
@@ -175,7 +175,7 @@ class SentenceAiApiClient {
       options: Options(
         responseType: ResponseType.stream,
         validateStatus: (_) => true,
-        headers: {'Authorization': 'Bearer $accessToken'},
+        headers: {'Authorization': 'Bearer ${accessToken.isNotEmpty ? accessToken : 'local'}'},
       ),
       cancelToken: cancelToken,
     );
@@ -249,7 +249,7 @@ class SentenceAiApiClient {
       options: Options(
         responseType: ResponseType.stream,
         validateStatus: (_) => true,
-        headers: {'Authorization': 'Bearer $accessToken'},
+        headers: {'Authorization': 'Bearer ${accessToken.isNotEmpty ? accessToken : 'local'}'},
       ),
       cancelToken: cancelToken,
     );
@@ -390,7 +390,7 @@ class SentenceAiApiClient {
       options: Options(
         responseType: ResponseType.stream,
         validateStatus: (_) => true,
-        headers: {'Authorization': 'Bearer $accessToken'},
+        headers: {'Authorization': 'Bearer ${accessToken.isNotEmpty ? accessToken : 'local'}'},
       ),
       cancelToken: cancelToken,
     );
@@ -487,7 +487,7 @@ class SentenceAiApiClient {
       options: Options(
         responseType: ResponseType.stream,
         validateStatus: (_) => true,
-        headers: {'Authorization': 'Bearer $accessToken'},
+        headers: {'Authorization': 'Bearer ${accessToken.isNotEmpty ? accessToken : 'local'}'},
       ),
       cancelToken: cancelToken,
     );

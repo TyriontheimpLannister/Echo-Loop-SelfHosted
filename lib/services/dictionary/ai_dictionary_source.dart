@@ -72,10 +72,8 @@ class AiDictionarySource implements DictionarySource {
     DictionaryLookupRequest request, {
     CancelToken? cancelToken,
   }) async* {
-    final token = request.accessToken;
-    if (token == null || token.isEmpty) {
-      throw const DictionaryAuthRequiredException();
-    }
+    // 自托管后端不校验 Supabase token；空 token 由 API client 转为 `local`。
+    final token = request.accessToken ?? '';
     final language = request.targetLanguage ?? _defaultLanguage;
     // request.word 保留大小写进入后端 prompt；缓存键用小写词形，
     // 确保 NASA/nasa 复用同一 L1/L2/L3 缓存。

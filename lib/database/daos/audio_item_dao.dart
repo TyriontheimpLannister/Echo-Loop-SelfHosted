@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../app_database.dart';
 import '../tables/audio_items.dart';
+import '../../services/app_logger.dart';
 
 part 'audio_item_dao.g.dart';
 
@@ -210,6 +211,27 @@ class AudioItemDao extends DatabaseAccessor<AppDatabase>
           wordTimestampsJson: Value(wordTimestampsJson),
         ),
       );
+      // 写入后立即回读：捕捉「写入看似成功但实际被事务吞掉」等罕见情况。
+      // 上一句 write 抛出会冒泡到外层；这里只在 write 完成后做断言。
+      // 仅做诊断：写入看似成功但回读不一致时记录告警，便于真机排查。
+      // 不抛异常以免破坏现有转录链路（异常会标记任务 Failed，与产品语义不符）。
+      final verify = await (select(
+        audioItems,
+      )..where((t) => t.id.equals(audioItemId))).getSingleOrNull();
+      if (verify == null || verify.transcriptSrt != srt) {
+        AppLogger.log(
+          'AudioItemDao',
+          'saveTranscriptContent 回读不一致 (id=$audioItemId)',
+        );
+      }
     });
+  }
+
+  /// 返回当前 audio_items 表的所有列名，供导出器诊断是否存在字幕列。
+  Future<List<String>> listAudioItemColumns() async {
+    final rows = await customSelect('PRAGMA table_info(audio_items)').get();
+    return rows
+        .map((row) => row.data['name'] as String)
+        .toList(growable: false);
   }
 }

@@ -279,7 +279,7 @@ class TranscriptionApiClient {
   }
 
   Options _authOptions(String accessToken) {
-    return Options(headers: {'Authorization': 'Bearer $accessToken'});
+    return Options(headers: {'Authorization': 'Bearer ${accessToken.isNotEmpty ? accessToken : 'local'}'});
   }
 
   /// 释放资源

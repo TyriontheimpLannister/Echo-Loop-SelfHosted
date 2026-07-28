@@ -6,7 +6,7 @@ part of 'feature_access_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$featureAccessHash() => r'a7c133c1b930b5a3b11bd5ae16beae40f93e64ac';
+String _$featureAccessHash() => r'8e8907be031be64d4ce32c74c9ee00af4cfe1b3d';
 
 /// Copied from Dart SDK
 class _SystemHash {

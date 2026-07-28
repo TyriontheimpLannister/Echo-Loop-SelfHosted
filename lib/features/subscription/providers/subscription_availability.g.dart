@@ -7,7 +7,7 @@ part of 'subscription_availability.dart';
 // **************************************************************************
 
 String _$subscriptionAvailabilityHash() =>
-    r'b445e1bd133f9afb86390b9055e59b9ebf476ab0';
+    r'e524a190b4179a4afb288445186aa03414310903';
 
 /// 当前平台是否支持订阅（订阅 UI 展示总闸）。
 ///
@@ -26,7 +26,7 @@ final subscriptionAvailabilityProvider = AutoDisposeProvider<bool>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef SubscriptionAvailabilityRef = AutoDisposeProviderRef<bool>;
-String _$webCheckoutModeHash() => r'21d9e2ff1e214141e0c0f58f762b4f5cfa8dcebd';
+String _$webCheckoutModeHash() => r'50e2cdd559bc0d32c32b01b54a284a5bb937d303';
 
 /// 当前是否走「网页支付」渠道（侧载 APK / 桌面）。
 ///

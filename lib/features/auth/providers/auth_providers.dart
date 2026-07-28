@@ -356,6 +356,6 @@ final supabaseSessionProvider = StreamProvider<Session?>((ref) {
 /// UI 层 `ref.watch(isAuthenticatedProvider)` 比 `watch(supabaseSessionProvider)
 /// .valueOrNull != null` 更直观。
 final isAuthenticatedProvider = Provider<bool>((ref) {
-  final session = ref.watch(supabaseSessionProvider).valueOrNull;
-  return session != null;
+  // [自用补丁] 本地伪登录，绕过"需登录"拦截（ref 保留以兼容 import）。
+  return true;
 });

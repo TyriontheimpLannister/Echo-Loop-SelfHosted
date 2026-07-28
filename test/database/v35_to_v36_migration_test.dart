@@ -43,9 +43,28 @@ void main() {
     expect(row.data['transcript_source'], 0);
     expect(row.data['transcript_srt'], isNull);
   });
+
+  test('当前版本数据库缺字幕列时 beforeOpen 会自愈', () async {
+    final dir = Directory.systemTemp.createTempSync('fluency_v46_srt_repair_');
+    addTearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+    final file = File('${dir.path}/echo_loop.db');
+    _createV35Fixture(file, userVersion: AppDatabase.currentSchemaVersion);
+
+    final db = AppDatabase(NativeDatabase(file));
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect('PRAGMA table_info(audio_items)')
+        .get();
+    final names = columns.map((row) => row.data['name'] as String).toSet();
+    expect(names, contains('transcript_srt'));
+    expect(names, contains('word_timestamps_json'));
+  });
 }
 
-void _createV35Fixture(File file) {
+void _createV35Fixture(File file, {int userVersion = 35}) {
   final raw = sqlite.sqlite3.open(file.path);
   try {
     // 模拟 v35 schema 的 audio_items（无 transcript_srt 列）
@@ -93,7 +112,7 @@ void _createV35Fixture(File file) {
       ],
     );
 
-    raw.execute('PRAGMA user_version = 35');
+    raw.execute('PRAGMA user_version = $userVersion');
   } finally {
     raw.dispose();
   }

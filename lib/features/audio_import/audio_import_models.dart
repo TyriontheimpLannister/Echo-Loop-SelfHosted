@@ -69,6 +69,7 @@ enum AudioImportFailureCode {
   invalidUrl,
   unsupportedScheme,
   unsupportedFormat,
+  invalidPayload,
   network,
   notAudio,
   duplicate,

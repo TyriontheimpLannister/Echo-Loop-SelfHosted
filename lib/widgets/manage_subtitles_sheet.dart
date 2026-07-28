@@ -1746,14 +1746,16 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
     AudioItem audioItem,
   ) async {
     final l10n = AppLocalizations.of(context)!;
+    // [自用补丁] 自托管无需 Supabase 登录：无 token 时传空串，后端以 'local' 兜底。
     final accessToken = (await ref.read(
       supabaseSessionProvider.future,
-    ))?.accessToken;
+    ))?.accessToken ?? '';
     if (!mounted || !context.mounted) return;
-    if (accessToken == null || accessToken.isEmpty) {
-      await _showTranscriptionSignInDialog(context);
-      return;
-    }
+    // [自用补丁] 移除"需登录"拦截（自托管无需 Supabase 账号即可使用云端转录）。
+    // if (accessToken.isEmpty) {
+    //   await _showTranscriptionSignInDialog(context);
+    //   return;
+    // }
     // 已登录但未解锁（非会员且 AI 转录试用用尽）→ 引导订阅升级。
     if (!ref.read(featureAccessProvider(PremiumFeature.aiTranscription))) {
       await openPaywall(context, ref);

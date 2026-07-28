@@ -1,9 +1,13 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../features/audio_import/audio_import_models.dart';
 import '../features/audio_import/audio_import_provider.dart';
+import '../features/audio_import/homeschooling_package_controller.dart';
 import '../l10n/app_localizations.dart';
 import '../models/audio_item.dart';
 import '../theme/app_theme.dart';
@@ -131,6 +135,7 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
           key: const ValueKey('choose-source'),
           onLocalFile: () => setState(() => _step = _ImportStep.localFile),
           onDirectUrl: () => setState(() => _step = _ImportStep.directUrl),
+          onHomeSchooling: () => _pickAndImportHomeSchoolingPackage(),
         ),
         _ImportStep.localFile => AddAudioDialog(
           key: const ValueKey('local-file'),
@@ -190,6 +195,46 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
         .importFromUrl(input, collectionId: widget.collectionId);
     if (!mounted || item == null) return;
     _handleImported([item]);
+  }
+
+  Future<void> _pickAndImportHomeSchoolingPackage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (result == null || result.files.isEmpty) return;
+      final path = result.files.single.path;
+      if (path == null) return;
+      final file = File(path);
+      if (!mounted) return;
+      Navigator.pop(context);
+      final controller = ref.read(homeschoolingImportControllerProvider.notifier);
+      await controller.importFromFile(file);
+      final state = ref.read(homeschoolingImportControllerProvider);
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      if (state is HomeschoolingImportSuccess) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '已导入 ${state.addedCount} 项；重复 ${state.duplicateCount} 项；失败 ${state.failedCount} 项。',
+            ),
+          ),
+        );
+      } else if (state is HomeschoolingImportFailure) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('HomeSchooling 包导入失败：${state.message}')),
+        );
+      }
+      controller.reset();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('打开 HomeSchooling 包失败：$error')),
+      );
+    }
   }
 
   Future<void> _cancelUrlImport() async {
@@ -258,10 +303,12 @@ class _ChooseSourcePanel extends StatelessWidget {
     super.key,
     required this.onLocalFile,
     required this.onDirectUrl,
+    required this.onHomeSchooling,
   });
 
   final VoidCallback onLocalFile;
   final VoidCallback onDirectUrl;
+  final VoidCallback onHomeSchooling;
 
   @override
   Widget build(BuildContext context) {
@@ -284,6 +331,14 @@ class _ChooseSourcePanel extends StatelessWidget {
           title: l10n.importAudioFromUrl,
           description: l10n.importAudioFromUrlDescription,
           onTap: onDirectUrl,
+        ),
+        const SizedBox(height: 12),
+        _ImportOptionTile(
+          key: const ValueKey('import-option-homeschooling'),
+          icon: Icons.school_outlined,
+          title: '从 HomeSchooling 包导入',
+          description: '选择 HomeSchooling 家长代学习机上生成的 .json 包，一键转成听写语料。',
+          onTap: onHomeSchooling,
         ),
       ],
     );
@@ -670,6 +725,7 @@ class _ImportErrorCard extends StatelessWidget {
       AudioImportFailureCode.unsupportedFormat => l10n.audioUrlUnsupported,
       AudioImportFailureCode.notAudio => l10n.audioUrlNotDirectAudio,
       AudioImportFailureCode.duplicate => l10n.audioUrlDuplicate,
+      AudioImportFailureCode.invalidPayload => l10n.audioUrlInvalid,
       AudioImportFailureCode.canceled => l10n.audioImportCanceled,
       AudioImportFailureCode.network ||
       AudioImportFailureCode.storage ||
