@@ -2,6 +2,8 @@
   <a href="./README.en.md">English</a> | <strong>简体中文</strong>
 </div>
 
+> 📌 **个人 fork 说明**：本仓库是从 [echo-loop/Echo-Loop](https://github.com/echo-loop/Echo-Loop) fork 而来，仅作**个人自用**，不向上游提交 Pull Request。如需为上游贡献代码或反馈问题，请前往原仓库。
+
 <div align="center">
   <img src="assets/icon/app-icon-1024-rounded.png" alt="Echo Loop" width="128" />
 
@@ -269,7 +271,7 @@ flowchart LR
 <summary><strong>🚀 快速开始</strong></summary>
 
 ```bash
-git clone git@github.com:echo-loop/Echo-Loop.git
+git clone git@github.com:TyriontheimpLannister/Echo-Loop.git
 cd Echo-Loop
 cp .dev.env.template .dev.env   # 填入 Supabase / Google / API 地址等编译期变量
 flutter pub get
@@ -284,16 +286,12 @@ flutter run -d <ios|android|macos> --dart-define-from-file=.dev.env
 </details>
 
 <details>
-<summary><strong>🤝 如何贡献</strong></summary>
+<summary><strong>🤝 关于贡献</strong></summary>
 
-欢迎提 Issue / PR。提交前请运行：
+本仓库为**个人自用 fork**，**不接收 Pull Request**，也不会将改动推送回上游（echo-loop/Echo-Loop）。
 
-```bash
-flutter analyze
-flutter test
-```
-
-Commit 标题遵循 `PREFIX: 内容` 格式（参考 `git log` 看常用前缀，如 FEAT / FIX / DOCS / MOD / OPT / CHORE / CI / RELEASE 等）。详细贡献流程见 [CONTRIBUTING.md](#)（待补）。本项目遵循 [Contributor Covenant](https://www.contributor-covenant.org/) 行为准则。
+如需为 Echo Loop 贡献代码、提交 Issue 或反馈问题，请前往上游原仓库：
+[github.com/echo-loop/Echo-Loop](https://github.com/echo-loop/Echo-Loop)
 
 </details>
 
