@@ -26,6 +26,8 @@ import 'tables/learned_word_forms.dart';
 import 'tables/daily_study_records.dart';
 import 'tables/daily_stage_study_records.dart';
 import 'tables/tts_cache.dart';
+import 'tables/memory_schedules.dart';
+import 'tables/memory_review_events.dart';
 import '../models/study_stage.dart';
 import 'daos/audio_item_dao.dart';
 import 'daos/collection_dao.dart';
@@ -41,6 +43,7 @@ import 'daos/learned_word_form_dao.dart';
 import 'daos/daily_study_record_dao.dart';
 import 'daos/daily_stage_study_record_dao.dart';
 import 'daos/tts_cache_dao.dart';
+import 'daos/memory_schedule_dao.dart';
 
 part 'app_database.g.dart';
 
@@ -67,6 +70,8 @@ part 'app_database.g.dart';
     DailyStudyRecords,
     DailyStageStudyRecords,
     TtsCache,
+    MemorySchedules,
+    MemoryReviewEvents,
   ],
   daos: [
     AudioItemDao,
@@ -83,13 +88,14 @@ part 'app_database.g.dart';
     DailyStudyRecordDao,
     DailyStageStudyRecordDao,
     TtsCacheDao,
+    MemoryScheduleDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   /// 当前 schema 版本（静态访问，用于导入前版本检查）
-  static const currentSchemaVersion = 46;
+  static const currentSchemaVersion = 48;
 
   @override
   int get schemaVersion => currentSchemaVersion;
@@ -116,6 +122,12 @@ class AppDatabase extends _$AppDatabase {
         await _ensurePodcastColumns();
       },
       onUpgrade: (Migrator m, int from, int to) async {
+        // v47→v48：新增通用记忆调度快照与只追加评分事件；不回填既有业务数据。
+        if (from < 48) {
+          await m.createTable(memorySchedules);
+          await m.createTable(memoryReviewEvents);
+          await _createMemorySchedulerIndexes();
+        }
         // v43→v44：tts_cache 新增 text 列（原始文本，便于调试）。
         // TTS 仍在开发阶段、缓存可丢弃，直接重建表即可（无需保留旧数据）。
         if (from >= 43 && from < 44) {
@@ -211,6 +223,15 @@ class AppDatabase extends _$AppDatabase {
               WHERE type LIKE 'translation:%'
             ''');
           }
+        }
+        // v46→v47：learning_progresses 新增 manual_unlock_at
+        // （「立即解锁」当前复习轮的时刻，null = 未手动解锁）。
+        if (from < 47) {
+          await _addColumnIfNotExists(
+            'learning_progresses',
+            'manual_unlock_at',
+            'INTEGER',
+          );
         }
         // v14→v15：新增 saved_words 表（收藏单词）
         if (from < 15) {
@@ -1057,6 +1078,35 @@ class AppDatabase extends _$AppDatabase {
       ON audio_items(remote_audio_id)
       WHERE remote_audio_id IS NOT NULL
         AND deleted_at IS NULL
+    ''');
+
+    await _createMemorySchedulerIndexes();
+  }
+
+  /// 创建记忆调度快照和事件的查询索引。
+  Future<void> _createMemorySchedulerIndexes() async {
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_memory_schedules_active_namespace_due
+      ON memory_schedules(namespace, due_at, id)
+      WHERE status = 'active'
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_memory_schedules_active_due
+      ON memory_schedules(due_at, id)
+      WHERE status = 'active'
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_memory_schedules_active_phase_due
+      ON memory_schedules(phase, due_at, id)
+      WHERE status = 'active'
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_memory_schedules_profile
+      ON memory_schedules(profile_id, profile_version)
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_memory_review_events_schedule_reviewed
+      ON memory_review_events(schedule_id, reviewed_at, sequence)
     ''');
   }
 }

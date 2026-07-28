@@ -6,6 +6,7 @@
 // 导航路径：合集详情 → 学习计划表 → 播放器
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:math' as math;
 import '../database/enums.dart';
@@ -58,6 +59,47 @@ import '../widgets/manage_subtitles_sheet.dart';
 import '../providers/listening_practice/bookmark_manager.dart';
 import '../database/providers.dart';
 import '../providers/learning_session/sentence_playback_engine.dart';
+
+/// 学习计划复习轮次标题左侧图标。
+///
+/// 使用固定 SVG，避免 `🔁` emoji 在不同平台被系统字体渲染成不一致的蓝色方块。
+const String _refreshIconAsset = 'assets/icon/refresh.svg';
+
+/// 学习计划大阶段完成标记图标。
+///
+/// 使用固定 SVG，避免 `✅` emoji 在不同平台呈现不一致。
+const String _checkCircleIconAsset = 'assets/icon/check-circle-3.svg';
+
+/// 学习计划大阶段当前到期标记图标。
+///
+/// 使用固定 SVG，避免 `📖` emoji 在不同平台呈现不一致。
+const String _calendarIconAsset = 'assets/icon/calendar-2.svg';
+
+/// 学习计划大阶段锁定标记图标。
+///
+/// 使用固定 SVG，避免 `🔒` emoji 在不同平台呈现不一致。
+const String _lockIconAsset = 'assets/icon/lock.svg';
+
+/// 学习计划复习轮次提前解锁按钮图标。
+const String _unlockIconAsset = 'assets/icon/unlock.svg';
+
+/// 学习计划首次学习标题左侧图标。
+const String _readingIconAsset = 'assets/icon/reading.svg';
+
+/// 学习计划阶段标题行标题列宽。
+///
+/// 首次学习与各复习轮次共用固定列宽，保证状态图标、状态文案和进度计数
+/// 在不同行之间垂直对齐。
+const double _stageHeaderTitleColumnWidth = 132;
+
+/// 学习计划阶段标题行中文标题列宽。
+const double _stageHeaderZhTitleColumnWidth = 112;
+
+/// 学习计划阶段标题行状态文案列最大宽度。
+const double _stageHeaderStatusTextMaxWidth = 180;
+
+/// 学习计划阶段标题行进度计数列宽。
+const double _stageHeaderProgressColumnWidth = 48;
 
 /// 实时查询指定音频的书签数量（难句数）
 ///
@@ -461,16 +503,18 @@ class _LearningPlanScreenState extends ConsumerState<LearningPlanScreen> {
 
   /// 构建计划页顶栏「更多操作」菜单（随心听按钮右侧）。
   ///
-  /// 承载对当前音频的重要操作：管理字幕、编辑字幕、导出音频、导出 PDF。
+  /// 承载对当前音频的重要操作：管理字幕、编辑字幕、导出音频、导出 PDF、重置进度。
   /// 与音频列表项菜单同源（复用 [showManageSubtitlesSheet]/[exportAudioItem]）。
   /// 官方音频隐藏字幕/导出写操作，仅在有字幕时保留导出 PDF；无可用项时返回 null。
   Widget? _buildPlanMenu(
     BuildContext context,
     AppLocalizations l10n,
     AudioItem audioItem,
+    LearningProgress? progress,
   ) {
     final isOfficial = audioItem.remoteAudioId != null;
     final hasTranscript = audioItem.hasTranscript;
+    final hasProgress = progress?.isStarted ?? false;
 
     final items = <PopupMenuEntry<String>>[
       if (!isOfficial)
@@ -501,6 +545,19 @@ class _LearningPlanScreenState extends ConsumerState<LearningPlanScreen> {
           icon: const Icon(Icons.picture_as_pdf_outlined, size: 20),
           label: l10n.exportPdf,
         ),
+      // 与音频列表菜单保持一致：仅在已有实际学习进度时提供危险的重置操作。
+      if (hasProgress)
+        appPopupMenuItem(
+          context,
+          value: 'resetProgress',
+          icon: Icon(
+            Icons.restart_alt,
+            size: 20,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          label: l10n.resetLearningProgress,
+          destructive: true,
+        ),
     ];
 
     if (items.isEmpty) return null;
@@ -522,10 +579,54 @@ class _LearningPlanScreenState extends ConsumerState<LearningPlanScreen> {
           case 'export':
             exportAudioItem(context, ref, audioItem);
           case 'exportPdf':
-            context.push(AppRoutes.pdfPreview, extra: audioItem);
+            AppRoutes.pushNested(
+              context,
+              AppRoutes.pdfPreviewSegment,
+              extra: audioItem,
+            );
+          case 'resetProgress':
+            _showResetProgressDialog(context, l10n, audioItem);
         }
       },
     );
+  }
+
+  /// 确认后清除当前音频的学习进度，并保留音频与字幕内容。
+  Future<void> _showResetProgressDialog(
+    BuildContext context,
+    AppLocalizations l10n,
+    AudioItem audioItem,
+  ) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.resetLearningProgressConfirmTitle),
+        content: Text(l10n.resetLearningProgressConfirmMessage(audioItem.name)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            child: Text(l10n.confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    await ref
+        .read(learningProgressNotifierProvider.notifier)
+        .deleteProgress(audioItem.id);
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.resetLearningProgressDone)));
+    }
   }
 
   /// 处理"开始学习/继续学习"按钮点击
@@ -1439,7 +1540,7 @@ class _LearningPlanScreenState extends ConsumerState<LearningPlanScreen> {
                 ),
               ),
             ),
-            ?_buildPlanMenu(context, l10n, audioItem),
+            ?_buildPlanMenu(context, l10n, audioItem, progress),
           ],
         ),
         body: Column(
@@ -1713,9 +1814,10 @@ class _ProgressCard extends ConsumerWidget {
     final item = audioItem!;
     final chips = <Widget>[];
 
-    // 内容异常警告（疑似空音频：解码失败 / 全程静音）放在首位，最醒目。
-    if (item.contentStatus == AudioContentStatus.suspectEmpty) {
-      chips.add(_buildContentWarningChip(theme));
+    // 内容异常警告（损坏 / 静音）放在首位，最醒目。
+    final contentWarningLabel = _contentWarningLabel(item.contentStatus);
+    if (contentWarningLabel != null) {
+      chips.add(_buildContentWarningChip(theme, contentWarningLabel));
     }
     if (item.totalDuration > 0) {
       chips.add(
@@ -1757,8 +1859,8 @@ class _ProgressCard extends ConsumerWidget {
     );
   }
 
-  /// 内容异常警告徽章（疑似空音频），与音频列表项的警告徽章风格一致。
-  Widget _buildContentWarningChip(ThemeData theme) {
+  /// 内容异常警告徽章，与音频列表项的警告徽章风格一致。
+  Widget _buildContentWarningChip(ThemeData theme, String label) {
     final color = theme.colorScheme.error;
     return Container(
       key: const Key('learning_plan_content_warning_badge'),
@@ -1774,7 +1876,7 @@ class _ProgressCard extends ConsumerWidget {
           Icon(Icons.warning_amber_rounded, size: 12, color: color),
           const SizedBox(width: 3),
           Text(
-            l10n.audioContentEmptyWarning,
+            label,
             style: theme.textTheme.labelSmall?.copyWith(
               color: color,
               fontSize: 10,
@@ -1785,6 +1887,14 @@ class _ProgressCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String? _contentWarningLabel(AudioContentStatus? status) {
+    return switch (status) {
+      AudioContentStatus.damaged => l10n.audioContentDamagedWarning,
+      AudioContentStatus.silent => l10n.audioContentSilentWarning,
+      AudioContentStatus.ok || null => null,
+    };
   }
 
   /// 第一行：大阶段文字
@@ -1946,6 +2056,150 @@ class _ProgressRingPainter extends CustomPainter {
       oldDelegate.progress != progress;
 }
 
+/// 学习计划阶段标题行。
+///
+/// 固定关键列宽，避免某一行缺少状态文案时影响后续进度计数和展开箭头的列对齐。
+class _StageHeaderRow extends StatelessWidget {
+  final String keyPrefix;
+  final Widget leadingIcon;
+  final String title;
+  final Color? titleColor;
+  final Widget statusIcon;
+  final String? statusText;
+  final Color statusTextColor;
+  final String progressText;
+  final Color progressColor;
+  final bool isExpanded;
+  final VoidCallback onTap;
+
+  const _StageHeaderRow({
+    required this.keyPrefix,
+    required this.leadingIcon,
+    required this.title,
+    this.titleColor,
+    required this.statusIcon,
+    this.statusText,
+    required this.statusTextColor,
+    required this.progressText,
+    required this.progressColor,
+    required this.isExpanded,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final titleColumnWidth = isZh
+        ? _stageHeaderZhTitleColumnWidth
+        : _stageHeaderTitleColumnWidth;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.xs,
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const horizontalGaps =
+                AppSpacing.s +
+                AppSpacing.xs +
+                AppSpacing.s +
+                AppSpacing.s +
+                AppSpacing.xs;
+            final fixedWidth =
+                20 +
+                titleColumnWidth +
+                18 +
+                _stageHeaderProgressColumnWidth +
+                24 +
+                horizontalGaps;
+            final statusTextWidth = math
+                .max(0, constraints.maxWidth - fixedWidth)
+                .clamp(0, _stageHeaderStatusTextMaxWidth)
+                .toDouble();
+
+            return Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: Center(child: leadingIcon),
+                ),
+                const SizedBox(width: AppSpacing.s),
+                SizedBox(
+                  key: Key('${keyPrefix}_title_column'),
+                  width: titleColumnWidth,
+                  child: Text(
+                    title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: titleColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                SizedBox(
+                  key: Key('${keyPrefix}_status_icon_column'),
+                  width: 18,
+                  height: 18,
+                  child: Center(child: statusIcon),
+                ),
+                const SizedBox(width: AppSpacing.s),
+                SizedBox(
+                  key: Key('${keyPrefix}_status_text_column'),
+                  width: statusTextWidth,
+                  child: Text(
+                    statusText ?? '',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: statusTextColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const Spacer(),
+                const SizedBox(width: AppSpacing.s),
+                SizedBox(
+                  key: Key('${keyPrefix}_progress_column'),
+                  width: _stageHeaderProgressColumnWidth,
+                  child: Text(
+                    progressText,
+                    textAlign: TextAlign.right,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: progressColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                SizedBox(
+                  key: Key('${keyPrefix}_expand_column'),
+                  width: 24,
+                  child: AnimatedRotation(
+                    turns: isExpanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      Icons.expand_more,
+                      color: theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.4,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 /// 首次学习区域 — 默认展开，显示 4 个步骤
 ///
 /// 已完成的盲听步骤支持点击进入自由练习模式。
@@ -2044,81 +2298,44 @@ class _FirstStudySection extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 标题行（可点击展开/折叠）
-        InkWell(
-          onTap: onToggle,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.xs,
-              vertical: AppSpacing.xs,
-            ),
-            child: Row(
-              children: [
-                const Text('🌱', style: TextStyle(fontSize: 20)),
-                const SizedBox(width: AppSpacing.s),
-                Expanded(
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          l10n.firstStudy,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: isFirstLearnCompleted ? Colors.green : null,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Text(
-                        isFirstLearnCompleted
-                            ? '✅'
-                            : progress?.isCurrentStage(
-                                    LearningStage.firstLearn,
-                                  ) ??
-                                  false
-                            ? '📖'
-                            : '🔒',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      if (firstLearnStatusText != null) ...[
-                        const SizedBox(width: AppSpacing.s),
-                        Flexible(
-                          child: Text(
-                            firstLearnStatusText,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: Colors.green,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.s),
-                Text(
-                  l10n.stepProgress(completedCount, subStages.length),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: isFirstLearnCompleted
-                        ? Colors.green
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                AnimatedRotation(
-                  turns: isExpanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    Icons.expand_more,
-                    color: theme.colorScheme.onSurfaceVariant.withValues(
-                      alpha: 0.4,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+        _StageHeaderRow(
+          keyPrefix: 'learning_plan_stage_first_learn',
+          leadingIcon: SvgPicture.asset(
+            _readingIconAsset,
+            width: 20,
+            height: 20,
           ),
+          title: l10n.firstStudy,
+          titleColor: isFirstLearnCompleted ? Colors.green : null,
+          statusIcon: isFirstLearnCompleted
+              ? SvgPicture.asset(
+                  _checkCircleIconAsset,
+                  width: 18,
+                  height: 18,
+                  colorFilter: const ColorFilter.mode(
+                    Colors.green,
+                    BlendMode.srcIn,
+                  ),
+                )
+              : progress?.isCurrentStage(LearningStage.firstLearn) ?? false
+              ? SvgPicture.asset(_calendarIconAsset, width: 18, height: 18)
+              : SvgPicture.asset(
+                  _lockIconAsset,
+                  width: 18,
+                  height: 18,
+                  colorFilter: ColorFilter.mode(
+                    theme.colorScheme.onSurfaceVariant,
+                    BlendMode.srcIn,
+                  ),
+                ),
+          statusText: firstLearnStatusText,
+          statusTextColor: Colors.green,
+          progressText: l10n.stepProgress(completedCount, subStages.length),
+          progressColor: isFirstLearnCompleted
+              ? Colors.green
+              : theme.colorScheme.onSurfaceVariant,
+          isExpanded: isExpanded,
+          onTap: onToggle,
         ),
         // 展开的步骤列表（无动画，直接切换）
         if (isExpanded) ...[
@@ -2995,7 +3212,9 @@ class _ReviewRoundSection extends ConsumerWidget {
     final nextReview = progress!.nextReviewAt;
     if (nextReview == null) return null;
 
-    if (now.isBefore(nextReview)) {
+    // 与锁定判定同源（isReviewReadyAt 对手动解锁短路），避免手动解锁后
+    // 按钮已消失、倒计时文案却仍显示的不一致。
+    if (!progress!.isReviewReadyAt(now) && now.isBefore(nextReview)) {
       final diff = nextReview.difference(now);
       if (diff.inDays > 0) {
         return l10n.reviewUnlockIn(diff.inDays);
@@ -3354,6 +3573,16 @@ class _ReviewRoundSection extends ConsumerWidget {
     final statusColor = isCompleted
         ? Colors.green
         : theme.colorScheme.onSurfaceVariant;
+    final reviewIconColor = isCompleted
+        ? Colors.green
+        : isFuture
+        ? theme.colorScheme.onSurfaceVariant
+        : theme.colorScheme.onSurface;
+    // 当前轮次锁定且未暂停 → 显示可点解锁药丸（倒计时并入药丸，不再挤在标题行）
+    final showUnlockPill =
+        isCurrent &&
+        !(progress?.isPaused ?? false) &&
+        (progress?.isReviewLockedAt(now) ?? false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3361,78 +3590,97 @@ class _ReviewRoundSection extends ConsumerWidget {
         Opacity(
           // 未开始（锁定）轮次进一步弱化，避免抢夺当前/已完成轮次的注意力
           opacity: isFuture ? 0.45 : 1.0,
-          child: InkWell(
+          child: _StageHeaderRow(
+            keyPrefix: 'learning_plan_stage_${review.stage.key}',
+            leadingIcon: SvgPicture.asset(
+              _refreshIconAsset,
+              width: 20,
+              height: 20,
+              colorFilter: ColorFilter.mode(reviewIconColor, BlendMode.srcIn),
+            ),
+            title: review.name,
+            titleColor: titleColor,
+            statusIcon: isCompleted
+                ? SvgPicture.asset(
+                    _checkCircleIconAsset,
+                    width: 18,
+                    height: 18,
+                    colorFilter: const ColorFilter.mode(
+                      Colors.green,
+                      BlendMode.srcIn,
+                    ),
+                  )
+                : isCurrent
+                ? SvgPicture.asset(_calendarIconAsset, width: 18, height: 18)
+                : SvgPicture.asset(
+                    _lockIconAsset,
+                    width: 18,
+                    height: 18,
+                    colorFilter: ColorFilter.mode(
+                      theme.colorScheme.onSurfaceVariant,
+                      BlendMode.srcIn,
+                    ),
+                  ),
+            // 状态文案内联到标题行：已完成显示完成时间，当前显示真实状态，
+            // 未来轮次不显示固定“After X days”，但仍保留状态文案列宽。
+            statusText: statusText,
+            statusTextColor: statusColor,
+            progressText: l10n.stepProgress(completedCount, subStages.length),
+            progressColor: isCompleted
+                ? Colors.green
+                : theme.colorScheme.onSurfaceVariant,
+            isExpanded: isExpanded,
             onTap: onToggle,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.xs,
-                vertical: AppSpacing.xs,
-              ),
-              child: Row(
-                children: [
-                  const Text('🔁', style: TextStyle(fontSize: 20)),
-                  const SizedBox(width: AppSpacing.s),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            review.name,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: titleColor,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Text(
-                          isCompleted
-                              ? '✅'
-                              : isCurrent
-                              ? '📖'
-                              : '🔒',
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                        // 状态文案内联到标题行：已完成显示完成时间，当前显示真实状态，
-                        // 未来轮次不显示固定“After X days”，避免误导。
-                        if (statusText != null) ...[
-                          const SizedBox(width: AppSpacing.s),
-                          Text(
-                            statusText,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: statusColor,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+          ),
+        ),
+        // 当前轮次锁定且未暂停时显示「立即解锁」药丸按钮：倒计时是标题行的
+        // 纯展示 label，解锁是独立按钮，两者分离避免歧义（解锁写 manualUnlockAt，
+        // 不篡改完成时间，后续轮次仍按实际完成时间顺延）。
+        if (showUnlockPill)
+          Padding(
+            padding: const EdgeInsets.only(
+              left: AppSpacing.xl,
+              top: AppSpacing.xs,
+            ),
+            child: Material(
+              color: theme.colorScheme.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(999),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () => ref
+                    .read(learningProgressNotifierProvider.notifier)
+                    .unlockCurrentReview(audioItemId),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.m,
+                    vertical: 6,
                   ),
-                  const SizedBox(width: AppSpacing.s),
-                  Text(
-                    l10n.stepProgress(completedCount, subStages.length),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: isCompleted
-                          ? Colors.green
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  AnimatedRotation(
-                    turns: isExpanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(
-                      Icons.expand_more,
-                      color: theme.colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.4,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SvgPicture.asset(
+                        _unlockIconAsset,
+                        width: 14,
+                        height: 14,
+                        colorFilter: ColorFilter.mode(
+                          theme.colorScheme.primary,
+                          BlendMode.srcIn,
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Text(
+                        l10n.unlockReviewNow,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
         if (isExpanded) ...[
           const SizedBox(height: AppSpacing.s),
           Column(

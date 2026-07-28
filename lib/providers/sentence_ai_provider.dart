@@ -231,6 +231,10 @@ class SentenceAiNotifier {
   final Future<void> Function(PremiumFeature feature, DateTime resetAt)?
   _onQuotaExceeded;
 
+  /// 后端确认 402 配额超限时调用（E7）：本地若仍 premium 说明权益已过时，
+  /// 由订阅层立即回源对账。与 [_onQuotaExceeded] 不同，本回调不依赖 resetAt。
+  final void Function(PremiumFeature feature)? _onBackendQuotaRejected;
+
   /// 后端请求成功后清除该功能 reset，说明用户当前已经恢复可用额度。
   final Future<void> Function(PremiumFeature feature)? _onApiSucceeded;
 
@@ -256,6 +260,7 @@ class SentenceAiNotifier {
     beforeApiRequest,
     Future<void> Function(PremiumFeature feature, DateTime resetAt)?
     onQuotaExceeded,
+    void Function(PremiumFeature feature)? onBackendQuotaRejected,
     Future<void> Function(PremiumFeature feature)? onApiSucceeded,
   }) : _cacheDao = cacheDao,
        _apiClient = apiClient,
@@ -263,6 +268,7 @@ class SentenceAiNotifier {
        _onConsumeTrial = onConsumeTrial,
        _beforeApiRequest = beforeApiRequest,
        _onQuotaExceeded = onQuotaExceeded,
+       _onBackendQuotaRejected = onBackendQuotaRejected,
        _onApiSucceeded = onApiSucceeded;
 
   /// 获取翻译（流式，三级缓存查找，带前后句上下文）
@@ -379,12 +385,12 @@ class SentenceAiNotifier {
             await pending.close();
             return;
           }
-          final quota = await _quotaExceptionFor(
+          final mapped = await _backendErrorFor(
             PremiumFeature.aiTranslation,
             e,
           );
-          if (quota != null) {
-            await pending.addError(quota, stackTrace);
+          if (mapped != null) {
+            await pending.addError(mapped, stackTrace);
             return;
           }
           if (attempt < 2) {
@@ -534,9 +540,9 @@ class SentenceAiNotifier {
             await pending.close();
             return;
           }
-          final quota = await _quotaExceptionFor(PremiumFeature.aiAnalysis, e);
-          if (quota != null) {
-            await pending.addError(quota, stackTrace);
+          final mapped = await _backendErrorFor(PremiumFeature.aiAnalysis, e);
+          if (mapped != null) {
+            await pending.addError(mapped, stackTrace);
             return;
           }
           if (attempt < 2) {
@@ -685,12 +691,12 @@ class SentenceAiNotifier {
             await pending.close();
             return;
           }
-          final quota = await _quotaExceptionFor(
+          final mapped = await _backendErrorFor(
             PremiumFeature.aiSenseGroup,
             e,
           );
-          if (quota != null) {
-            await pending.addError(quota, stackTrace);
+          if (mapped != null) {
+            await pending.addError(mapped, stackTrace);
             return;
           }
           if (attempt < 2) {
@@ -873,13 +879,25 @@ class SentenceAiNotifier {
     _senseGroupCache.clear();
   }
 
-  Future<AiFeatureQuotaExceededException?> _quotaExceptionFor(
+  /// 把后端已定义语义的状态码映射为业务异常（客户端按状态码分别反应）：
+  /// - 401 → [AiFeatureAuthRequiredException]：登录态缺失/失效，UI 引导重新登录；
+  /// - 402 quota_exceeded → [AiFeatureQuotaExceededException]：UI 引导订阅，
+  ///   同时触发 E7 权益分歧收敛；
+  /// - 其它（403 / 5xx / 网络）→ null：交由调用方重试或按通用错误处理。
+  Future<Exception?> _backendErrorFor(
     PremiumFeature feature,
     DioException error,
   ) async {
-    if (error.response?.statusCode != 402) return null;
+    final statusCode = error.response?.statusCode;
+    if (statusCode == 401) {
+      AppLogger.log('SentenceAI', '后端 401：登录态失效，转登录引导 feature=${feature.name}');
+      return const AiFeatureAuthRequiredException();
+    }
+    if (statusCode != 402) return null;
     final data = error.response?.data;
     if (data is Map && data['code'] != 'quota_exceeded') return null;
+    // E7：后端权威裁决为「无额度」；本地若仍 premium 由订阅层收敛分歧。
+    _onBackendQuotaRejected?.call(feature);
     final resetAt = _quotaResetAtFrom(data);
     if (resetAt != null) {
       await _onQuotaExceeded?.call(feature, resetAt);
@@ -939,6 +957,10 @@ final sentenceAiNotifierProvider = Provider<SentenceAiNotifier>((ref) {
           .read(aiQuotaLimitStoreProvider)
           .recordResetAt(userId, feature, resetAt);
     },
+    // E7：后端 402 与本地 premium 分歧时回源对账（handler 内部判 isActive）。
+    onBackendQuotaRejected: (feature) => ref.read(
+      entitlementQuotaDivergenceHandlerProvider,
+    )('sentenceAi:${feature.name}'),
     onApiSucceeded: (feature) async {
       final userId = ref.read(subscriptionIdentityProvider).userId;
       if (userId == null) return;

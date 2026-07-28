@@ -38,6 +38,8 @@ class AudioLibraryState {
 
 @Riverpod(keepAlive: true)
 class AudioLibrary extends _$AudioLibrary {
+  final Set<String> _contentCheckInFlight = <String>{};
+
   @override
   AudioLibraryState build() {
     return const AudioLibraryState();
@@ -467,8 +469,9 @@ class AudioLibrary extends _$AudioLibrary {
 
   /// 检测音频内容有效性并持久化（新下载/导入完成后调用）。
   ///
-  /// 解码失败或全程静音 → [AudioContentStatus.suspectEmpty]。
-  /// [decodedDurationSeconds] 调用方已算出解码时长时传入，避免重复解码。
+  /// FFmpeg 短解码失败 → [AudioContentStatus.damaged]；可解码但静音 →
+  /// [AudioContentStatus.silent]。
+  /// [decodedDurationSeconds] 保留调用兼容，不参与内容有效性判定。
   /// 后台执行，失败仅记录日志，不影响主流程。写回前校验条目仍存在且 audioPath
   /// 未变（防竞态）。
   Future<void> checkAudioContent(
@@ -477,6 +480,7 @@ class AudioLibrary extends _$AudioLibrary {
   }) async {
     final item = getItemById(audioId);
     if (item == null || !item.isAudioReady) return;
+    if (!_contentCheckInFlight.add(audioId)) return;
     final audioPath = item.audioPath!;
     try {
       final status = await evaluateAudioContent(
@@ -489,6 +493,8 @@ class AudioLibrary extends _$AudioLibrary {
       await updateAudioItem(latest.copyWith(contentStatus: status));
     } catch (e) {
       AppLogger.log('AudioContentCheck', '音频内容检测失败: $e');
+    } finally {
+      _contentCheckInFlight.remove(audioId);
     }
   }
 

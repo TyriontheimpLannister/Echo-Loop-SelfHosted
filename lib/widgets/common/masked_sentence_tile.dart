@@ -44,7 +44,7 @@ const _wordSpacing = 4.0;
 /// 遮盖句子 Tile
 ///
 /// 三个独立点击区：
-/// - **编号区**（左侧 48dp 宽，撑满 tile 全高）：`onPlayFromTap`，点击从该句开播。
+/// - **编号区**（左侧 32dp 宽，撑满 tile 全高）：`onPlayFromTap`，点击从该句开播。
 ///   当前播放句的编号位置渲染 ▶ play_arrow 图标，提示"点击=播放"。
 /// - **主体区**（中间 Expanded）：`onDetailTap`，点击进入句子讲解页。
 /// - **收藏区**（右侧独立按钮）：`onBookmarkTap`，直接收藏/取消收藏。
@@ -218,7 +218,8 @@ class MaskedSentenceTile extends ConsumerWidget {
 
 /// 编号点击区
 ///
-/// 固定 40dp 宽，给正文释放更多横向空间，同时保留独立播放热区。
+/// 固定 32dp 宽，给正文释放更多横向空间，同时保留独立播放热区
+/// （热区随 tile 全高撑开，窄宽度不影响可点性）。
 /// 当前播放句渲染 ▶ play_arrow（与正在播放视觉绑定），否则渲染数字。
 class _SentenceNumberHitArea extends StatelessWidget {
   final int displayNumber;
@@ -237,7 +238,7 @@ class _SentenceNumberHitArea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final inner = SizedBox(
-      width: 40,
+      width: 32,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
         child: Center(
@@ -338,7 +339,7 @@ class _SentenceBookmarkHitArea extends StatelessWidget {
         : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.28);
 
     final inner = SizedBox(
-      width: 38,
+      width: 32,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
         child: Center(

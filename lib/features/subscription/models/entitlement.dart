@@ -5,6 +5,7 @@
 /// 真相源在后端（见 SubscriptionController 对账逻辑）。
 library;
 
+import 'entitlement_source.dart';
 import 'subscription_plan.dart';
 
 /// 不可变权益快照。
@@ -33,6 +34,13 @@ class Entitlement {
   /// 是否会自动续费。
   final bool willRenew;
 
+  /// 订阅来源渠道（Apple / Google / Paddle）。
+  ///
+  /// 决定「管理订阅」入口指向哪个平台，与 App 当前运行平台解耦。
+  /// 无有效权益、老缓存无该字段或来源不可识别时为 [EntitlementSource.unknown]，
+  /// 此时管理入口回退到「按当前平台渠道」的旧逻辑。
+  final EntitlementSource source;
+
   const Entitlement({
     required this.isPremium,
     this.activeEntitlements = const {},
@@ -40,6 +48,7 @@ class Entitlement {
     this.period,
     this.expiresAt,
     this.willRenew = false,
+    this.source = EntitlementSource.unknown,
   });
 
   /// 免费态（无任何权益）。
@@ -63,6 +72,7 @@ class Entitlement {
     SubscriptionPeriod? period,
     DateTime? expiresAt,
     bool? willRenew,
+    EntitlementSource? source,
   }) {
     return Entitlement(
       isPremium: isPremium ?? this.isPremium,
@@ -71,6 +81,7 @@ class Entitlement {
       period: period ?? this.period,
       expiresAt: expiresAt ?? this.expiresAt,
       willRenew: willRenew ?? this.willRenew,
+      source: source ?? this.source,
     );
   }
 
@@ -83,6 +94,7 @@ class Entitlement {
       'period': period?.name,
       'expiresAt': expiresAt?.toIso8601String(),
       'willRenew': willRenew,
+      'source': source.name,
     };
   }
 
@@ -104,6 +116,7 @@ class Entitlement {
       period: rawPeriod is String ? _periodFromName(rawPeriod) : null,
       expiresAt: rawExpiry is String ? DateTime.tryParse(rawExpiry) : null,
       willRenew: json['willRenew'] == true,
+      source: entitlementSourceFromName(json['source'] as String?),
     );
   }
 
@@ -124,7 +137,8 @@ class Entitlement {
           productId == other.productId &&
           period == other.period &&
           expiresAt == other.expiresAt &&
-          willRenew == other.willRenew;
+          willRenew == other.willRenew &&
+          source == other.source;
 
   @override
   int get hashCode => Object.hash(
@@ -134,6 +148,7 @@ class Entitlement {
     period,
     expiresAt,
     willRenew,
+    source,
   );
 }
 

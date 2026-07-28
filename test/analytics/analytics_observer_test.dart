@@ -5,6 +5,7 @@ import 'package:echo_loop/analytics/analytics_service.dart';
 import 'package:echo_loop/analytics/analytics_channel.dart';
 import 'package:echo_loop/analytics/consent_manager.dart';
 import 'package:echo_loop/analytics/models/event_names.dart';
+import 'package:echo_loop/services/app_logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 记录所有事件的测试通道
@@ -41,6 +42,7 @@ void main() {
   late AnalyticsObserver observer;
 
   setUp(() async {
+    AppLogger.instance.clear();
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     channel = _RecordingChannel();
@@ -99,6 +101,33 @@ void main() {
 
       expect(channel.events, hasLength(1));
       expect(channel.events.first.params?[EventParams.screenName], 'study');
+    });
+
+    test('didPush/didPop 打印 Navigator 动作诊断日志', () {
+      final route1 = MaterialPageRoute(
+        settings: const RouteSettings(name: '/study'),
+        builder: (_) => const SizedBox(),
+      );
+      final route2 = MaterialPageRoute(
+        settings: const RouteSettings(name: '/favorites'),
+        builder: (_) => const SizedBox(),
+      );
+
+      observer.didPush(route1, null);
+      observer.didPush(route2, route1);
+      observer.didPop(route2, route1);
+
+      final lines = AppLogger.instance.entries.map((e) => e.toString());
+      expect(
+        lines,
+        contains(contains('[Navigation] didPush route=/study previous=(null)')),
+      );
+      expect(
+        lines,
+        contains(
+          contains('[Navigation] didPop route=/favorites previous=/study'),
+        ),
+      );
     });
 
     test('忽略 root 路由 /', () {

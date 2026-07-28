@@ -113,7 +113,6 @@ String? get manageSubscriptionsUrl {
 }
 
 /// 按本地支付实现选择订阅管理入口。
-@visibleForTesting
 String? manageSubscriptionsUrlForChannel(
   ClientPaymentChannel channel, {
   required String webManageUrl,

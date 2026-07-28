@@ -90,6 +90,19 @@ class _PendingAudioImportController extends PodcastDownloadController {
   }
 }
 
+class _FailingAudioImportController extends PodcastDownloadController {
+  @override
+  AudioImportState build() => const AudioImportIdle();
+
+  @override
+  Future<bool> downloadPodcastEpisode(AudioItem item) async {
+    state = const AudioImportFailed(
+      AudioImportException(AudioImportFailureCode.network, 'network blocked'),
+    );
+    return false;
+  }
+}
+
 Session _signedInSession() {
   final user = User(
     id: 'user-1',
@@ -122,7 +135,7 @@ void main() {
       );
     }
 
-    testWidgets('有字幕时第三行显示带图标、描边和浅色底的字幕标签', (tester) async {
+    testWidgets('有字幕时元信息行显示带描边和浅色底的 CC 字幕标签', (tester) async {
       final item = createTestAudioItem(name: 'Audio with transcript');
 
       await tester.pumpWidget(buildTile(item));
@@ -132,16 +145,14 @@ void main() {
         find.byKey(const Key('audio_list_tile_metadata_row')),
         findsOneWidget,
       );
-      expect(
-        find.byKey(const Key('audio_list_tile_badge_row')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('audio_list_tile_badge_row')), findsNothing);
       expect(
         find.byKey(const Key('audio_list_tile_transcript_badge')),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.subtitles_outlined), findsOneWidget);
-      expect(find.text('Transcript'), findsOneWidget);
+      expect(find.byIcon(Icons.subtitles_outlined), findsNothing);
+      expect(find.text('CC'), findsOneWidget);
+      expect(find.text('subtitles'), findsNothing);
 
       final badge = tester.widget<Container>(
         find.byKey(const Key('audio_list_tile_transcript_badge')),
@@ -159,10 +170,10 @@ void main() {
           .getTopLeft(find.byKey(const Key('audio_list_tile_metadata_row')))
           .dy;
       final badgeY = tester
-          .getTopLeft(find.byKey(const Key('audio_list_tile_badge_row')))
+          .getTopLeft(find.byKey(const Key('audio_list_tile_transcript_badge')))
           .dy;
       expect(metadataY, greaterThan(titleY));
-      expect(badgeY, greaterThan(metadataY));
+      expect((badgeY - metadataY).abs(), lessThan(2));
     });
 
     testWidgets('无任何 badge 时只显示标题和元数据两行', (tester) async {
@@ -181,7 +192,7 @@ void main() {
       );
       expect(find.byKey(const Key('audio_list_tile_badge_row')), findsNothing);
       expect(find.byIcon(Icons.subtitles_outlined), findsNothing);
-      expect(find.text('Transcript'), findsNothing);
+      expect(find.text('subtitles'), findsNothing);
     });
   });
 
@@ -332,12 +343,12 @@ void main() {
       );
     }
 
-    testWidgets('suspectEmpty 时显示警告徽章', (tester) async {
+    testWidgets('damaged 时显示损坏警告徽章', (tester) async {
       final item = createTestAudioItem(
-        name: 'Empty Audio',
+        name: 'Damaged Audio',
         transcriptPath: null,
         transcriptSource: null,
-      ).copyWith(contentStatus: AudioContentStatus.suspectEmpty);
+      ).copyWith(contentStatus: AudioContentStatus.damaged);
 
       await tester.pumpWidget(buildTile(item));
       await tester.pumpAndSettle();
@@ -347,16 +358,33 @@ void main() {
         findsOneWidget,
       );
       expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
-      expect(find.text('Possibly empty'), findsOneWidget);
+      expect(find.text('Audio issue'), findsOneWidget);
     });
 
-    testWidgets('suspectEmpty 且 totalDuration=0 时不渲染时长行', (tester) async {
+    testWidgets('silent 时显示静音警告徽章', (tester) async {
       final item = createTestAudioItem(
-        name: 'Empty Audio',
+        name: 'Silent Audio',
+        transcriptPath: null,
+        transcriptSource: null,
+      ).copyWith(contentStatus: AudioContentStatus.silent);
+
+      await tester.pumpWidget(buildTile(item));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('audio_list_tile_content_warning_badge')),
+        findsOneWidget,
+      );
+      expect(find.text('Possibly silent'), findsOneWidget);
+    });
+
+    testWidgets('非 ok 且 totalDuration=0 时不渲染时长行', (tester) async {
+      final item = createTestAudioItem(
+        name: 'Damaged Audio',
         totalDuration: 0,
         transcriptPath: null,
         transcriptSource: null,
-      ).copyWith(contentStatus: AudioContentStatus.suspectEmpty);
+      ).copyWith(contentStatus: AudioContentStatus.damaged);
 
       await tester.pumpWidget(buildTile(item));
       await tester.pumpAndSettle();
@@ -422,7 +450,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Added'), findsOneWidget);
-      expect(find.textContaining('Published'), findsNothing);
+      expect(find.textContaining('Released'), findsNothing);
     });
 
     testWidgets('podcast 单集显示「发布于」而非「添加于」', (tester) async {
@@ -435,7 +463,7 @@ void main() {
       await tester.pumpWidget(buildTile(item));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Published'), findsOneWidget);
+      expect(find.textContaining('Released'), findsOneWidget);
       expect(find.textContaining('Added'), findsNothing);
     });
   });
@@ -520,6 +548,49 @@ void main() {
 
       controller.complete();
       await tester.pumpAndSettle();
+    });
+
+    testWidgets('单集下载失败时 SnackBar 显示具体错误原因', (tester) async {
+      final item =
+          createTestAudioItem(
+            name: 'Podcast Episode',
+            transcriptPath: null,
+            transcriptSource: null,
+          ).copyWith(
+            audioPath: null,
+            podcastEpisodeGuid: 'episode-guid-1',
+            podcastEnclosureUrl: 'https://example.com/episode.mp3',
+            podcastEnclosureType: 'audio/mpeg',
+          );
+
+      await tester.pumpWidget(
+        createTestApp(
+          Center(
+            child: SizedBox(width: 420, child: AudioListTile(audioItem: item)),
+          ),
+          overrides: [
+            audioLibraryProvider.overrideWith(
+              () => TestAudioLibrary(AudioLibraryState(audioItems: [item])),
+            ),
+            podcastDownloadControllerProvider.overrideWith(
+              _FailingAudioImportController.new,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Podcast Episode'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('Podcast Episode download failed, please retry'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Network error. Check your connection and retry.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('未下载单集左侧显示下载图标而非进度环', (tester) async {
@@ -783,7 +854,7 @@ void main() {
       expect(find.textContaining('Audio too long'), findsOneWidget);
       expect(find.byType(SnackBar), findsNothing);
 
-      await tester.pump(const Duration(seconds: 5));
+      await tester.pump(const Duration(seconds: 12));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Audio too long'), findsNothing);
@@ -1014,7 +1085,7 @@ void main() {
       await tester.tap(find.byKey(const Key('audio_list_tile_menu_hit_area')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Update Subtitle'), findsOneWidget);
+      expect(find.text('Update Subtitles'), findsOneWidget);
       expect(find.text('Manage Subtitles'), findsNothing);
       expect(find.text('Edit subtitles'), findsNothing);
     });
@@ -1101,12 +1172,12 @@ void main() {
 
       await tester.tap(find.byKey(const Key('audio_list_tile_menu_hit_area')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Update Subtitle'));
+      await tester.tap(find.text('Update Subtitles'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Update subtitle?'), findsOneWidget);
+      expect(find.text('Update subtitles?'), findsOneWidget);
       expect(
-        find.textContaining('clear all bookmarked sentences'),
+        find.textContaining('clearing all saved sentences'),
         findsOneWidget,
       );
     });

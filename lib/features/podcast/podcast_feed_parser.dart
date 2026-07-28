@@ -27,6 +27,11 @@ class PodcastFeedParser {
     final author =
         _text(channel, 'itunes:author') ?? _text(channel, 'managingEditor');
     final description = _cleanText(_text(channel, 'description'));
+    final websiteUrl = _cleanText(_text(channel, 'link'));
+    final categories = _parseCategories(channel);
+    final language = _cleanText(_text(channel, 'language'));
+    final copyright = _cleanText(_text(channel, 'copyright'));
+    final explicit = _cleanText(_text(channel, 'itunes:explicit'));
     // RSS 2.0 image url 在 <image><url>；iTunes 在 <itunes:image href="...">
     final imageUrl =
         channel
@@ -46,7 +51,32 @@ class PodcastFeedParser {
       author: author?.trim().isEmpty == true ? null : author?.trim(),
       description: description?.trim().isEmpty == true ? null : description,
       imageUrl: imageUrl?.trim().isEmpty == true ? null : imageUrl?.trim(),
+      categories: categories,
+      language: language?.trim().isEmpty == true ? null : language,
+      copyright: copyright?.trim().isEmpty == true ? null : copyright,
+      websiteUrl: websiteUrl?.trim().isEmpty == true ? null : websiteUrl,
+      explicit: explicit?.trim().isEmpty == true ? null : explicit,
     );
+  }
+
+  /// 提取 RSS 与 iTunes 分类。iTunes 支持嵌套分类，这里保留每层 text 并去重。
+  List<String> _parseCategories(XmlElement channel) {
+    final seen = <String>{};
+    final categories = <String>[];
+
+    void add(String? raw) {
+      final text = _cleanText(raw)?.trim();
+      if (text == null || text.isEmpty) return;
+      if (seen.add(text.toLowerCase())) categories.add(text);
+    }
+
+    for (final element in channel.findElements('category')) {
+      add(element.innerText);
+    }
+    for (final element in channel.findAllElements('itunes:category')) {
+      add(element.getAttribute('text'));
+    }
+    return categories;
   }
 
   List<PodcastEpisode> _parseEpisodes(XmlElement channel) {
@@ -56,8 +86,17 @@ class PodcastFeedParser {
       if (guid == null || guid.isEmpty) continue; // 无 guid 跳过
 
       final enclosure = item.findElements('enclosure').firstOrNull;
-      final enclosureUrl = enclosure?.getAttribute('url') ?? '';
-      final enclosureType = enclosure?.getAttribute('type') ?? 'audio/mpeg';
+      final secureEnclosure = item
+          .findElements('ppg:enclosureSecure')
+          .firstOrNull;
+      final enclosureUrl =
+          secureEnclosure?.getAttribute('url') ??
+          enclosure?.getAttribute('url') ??
+          '';
+      final enclosureType =
+          secureEnclosure?.getAttribute('type') ??
+          enclosure?.getAttribute('type') ??
+          'audio/mpeg';
       if (enclosureUrl.isEmpty) continue; // 无音频 URL 跳过
 
       final title = _text(item, 'title') ?? guid;
@@ -96,15 +135,38 @@ class PodcastFeedParser {
     if (text == null || text.isEmpty) return null;
 
     // RSS 的 description 常混入 HTML 片段或 CDATA。这里在数据入口统一转成
-    // 纯文本，避免发现预览、本地合集详情和单集列表分别做 UI 层补丁。
+    // 纯文本，但**保留段落换行**：块级标签（p / div / li / br）转成 `\n`，
+    // 其余标签删除，行内空白合并，避免发现预览、本地合集详情和单集列表分别
+    // 做 UI 层补丁。正文内的裸链接由展示层（_LinkifiedText）识别为可点击。
     final decodedText = _decodeHtmlEntities(text);
     final withBreaks = decodedText
-        .replaceAll(RegExp(r'<\s*br\s*/?\s*>', caseSensitive: false), ' ')
-        .replaceAll(RegExp(r'<\s*/\s*p\s*>', caseSensitive: false), ' ')
-        .replaceAll(RegExp(r'<\s*/\s*div\s*>', caseSensitive: false), ' ')
-        .replaceAll(RegExp(r'<[^>]+>'), ' ');
+        .replaceAll(RegExp(r'<\s*br\s*/?\s*>', caseSensitive: false), '\n')
+        .replaceAll(
+          RegExp(r'<\s*/\s*(p|div|li)\s*>', caseSensitive: false),
+          '\n',
+        )
+        .replaceAll(RegExp(r'<[^>]+>'), '');
     final unescaped = _decodeHtmlEntities(withBreaks);
-    final normalized = unescaped.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+    // 逐行清理：合并行内空白并 trim；多个连续空行压成最多一个，去掉首尾空行。
+    final rawLines = unescaped
+        .split('\n')
+        .map((line) => line.replaceAll(RegExp(r'[ \t]+'), ' ').trim());
+    final lines = <String>[];
+    var lastBlank = false;
+    for (final line in rawLines) {
+      if (line.isEmpty) {
+        if (!lastBlank && lines.isNotEmpty) lines.add('');
+        lastBlank = true;
+      } else {
+        lines.add(line);
+        lastBlank = false;
+      }
+    }
+    while (lines.isNotEmpty && lines.last.isEmpty) {
+      lines.removeLast();
+    }
+    final normalized = lines.join('\n');
     return normalized.isEmpty ? null : normalized;
   }
 

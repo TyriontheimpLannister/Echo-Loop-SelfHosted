@@ -65,8 +65,11 @@ void main() {
         createTestApp(SentenceAnnotationCard(text: 'Hello world')),
       );
 
-      // 句子文本通过 RichText 渲染
-      expect(find.byType(RichText), findsWidgets);
+      // 句子正文使用系统标准可选文本。
+      final sentence = tester.widget<SelectableText>(
+        find.byType(SelectableText),
+      );
+      expect(sentence.textSpan?.toPlainText(), 'Hello world');
     });
   });
 
@@ -79,7 +82,7 @@ void main() {
             onRequestTranslation: _translate('翻译'),
             onRequestAnalysis: _dummyStream,
             hasWordTimestamps: true,
-            onRequestSenseGroups: () async {},
+            onRequestSenseGroups: (_) async {},
           ),
         ),
       );
@@ -87,8 +90,8 @@ void main() {
       expect(find.byIcon(Icons.auto_fix_high), findsOneWidget);
       expect(find.byIcon(Icons.translate), findsOneWidget);
       expect(find.byIcon(Icons.auto_awesome), findsOneWidget);
-      expect(find.text('Groups'), findsOneWidget);
-      expect(find.text('Translate'), findsOneWidget);
+      expect(find.text('Sense Groups'), findsOneWidget);
+      expect(find.text('Translation'), findsOneWidget);
       expect(find.text('Analysis'), findsOneWidget);
     });
 
@@ -101,17 +104,17 @@ void main() {
             onRequestTranslation: _translate('翻译'),
             onRequestAnalysis: _dummyStream,
             hasWordTimestamps: false,
-            onRequestSenseGroups: () async {
+            onRequestSenseGroups: (_) async {
               requested = true;
             },
           ),
         ),
       );
 
-      expect(find.text('Groups'), findsOneWidget);
+      expect(find.text('Sense Groups'), findsOneWidget);
 
       // 点击拆意群按钮可正常触发请求
-      await tester.tap(find.text('Groups'));
+      await tester.tap(find.text('Sense Groups'));
       await tester.pump();
       expect(requested, isTrue);
     });
@@ -333,7 +336,7 @@ void main() {
               analysisCalls++;
               return analysisController.stream;
             },
-            onRequestSenseGroups: () async {
+            onRequestSenseGroups: (_) async {
               senseGroupCalls++;
             },
           ),
@@ -362,6 +365,35 @@ void main() {
 
       expect(find.text('自动翻译'), findsOneWidget);
       expect(_renderedRichText().contains('自动解析'), isTrue);
+    });
+
+    testWidgets('自动请求意群时按钮显示 spinner 并传递 automatic 来源', (tester) async {
+      final completer = Completer<void>();
+      SentenceAiRequestSource? source;
+
+      await tester.pumpWidget(
+        createTestApp(
+          SentenceAnnotationCard(
+            text: 'Auto groups',
+            autoLoadSenseGroups: true,
+            hasWordTimestamps: true,
+            onRequestSenseGroups: (requestSource) {
+              source = requestSource;
+              return completer.future;
+            },
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      expect(source, SentenceAiRequestSource.automatic);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      completer.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
     testWidgets('有缓存时自动加载不触发请求且保持展开', (tester) async {
@@ -623,14 +655,14 @@ void main() {
             text: 'Test sentence here',
             onRequestTranslation: _translate('翻译'),
             hasWordTimestamps: true,
-            onRequestSenseGroups: () async {
+            onRequestSenseGroups: (_) async {
               requested = true;
             },
           ),
         ),
       );
 
-      await tester.tap(find.text('Groups'));
+      await tester.tap(find.text('Sense Groups'));
       await tester.pump();
       expect(requested, isTrue);
     });
@@ -659,7 +691,7 @@ void main() {
             senseGroupResult: senseGroupResult,
             senseGroupTimings: timings,
             hasWordTimestamps: true,
-            onRequestSenseGroups: () async {},
+            onRequestSenseGroups: (_) async {},
           ),
         ),
       );
@@ -689,13 +721,13 @@ void main() {
             text: 'Test',
             onRequestTranslation: _translate('翻译'),
             hasWordTimestamps: true,
-            onRequestSenseGroups: () => completer.future,
+            onRequestSenseGroups: (_) => completer.future,
           ),
         ),
       );
 
       // 点击意群按钮触发请求
-      await tester.tap(find.text('Groups'));
+      await tester.tap(find.text('Sense Groups'));
       await tester.pump();
 
       // 请求进行中应显示 CircularProgressIndicator

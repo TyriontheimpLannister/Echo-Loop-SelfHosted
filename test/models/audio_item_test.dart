@@ -518,10 +518,8 @@ void main() {
     group('AudioContentStatus 枚举', () {
       test('fromIndex 正确映射', () {
         expect(AudioContentStatus.fromIndex(0), AudioContentStatus.ok);
-        expect(
-          AudioContentStatus.fromIndex(1),
-          AudioContentStatus.suspectEmpty,
-        );
+        expect(AudioContentStatus.fromIndex(1), AudioContentStatus.damaged);
+        expect(AudioContentStatus.fromIndex(2), AudioContentStatus.silent);
         expect(AudioContentStatus.fromIndex(null), isNull);
         expect(AudioContentStatus.fromIndex(99), isNull);
         expect(AudioContentStatus.fromIndex(-1), isNull);
@@ -529,7 +527,8 @@ void main() {
 
       test('index 属性正确', () {
         expect(AudioContentStatus.ok.index, 0);
-        expect(AudioContentStatus.suspectEmpty.index, 1);
+        expect(AudioContentStatus.damaged.index, 1);
+        expect(AudioContentStatus.silent.index, 2);
       });
     });
 
@@ -538,15 +537,26 @@ void main() {
         expect(createSample().contentStatus, isNull);
       });
 
-      test('toJson / fromJson 往返一致 — suspectEmpty', () {
+      test('toJson / fromJson 往返一致 — damaged', () {
         final item = createSample().copyWith(
-          contentStatus: AudioContentStatus.suspectEmpty,
+          contentStatus: AudioContentStatus.damaged,
         );
         final json = item.toJson();
         expect(json['contentStatus'], 1);
 
         final restored = AudioItem.fromJson(json);
-        expect(restored.contentStatus, AudioContentStatus.suspectEmpty);
+        expect(restored.contentStatus, AudioContentStatus.damaged);
+      });
+
+      test('toJson / fromJson 往返一致 — silent', () {
+        final item = createSample().copyWith(
+          contentStatus: AudioContentStatus.silent,
+        );
+        final json = item.toJson();
+        expect(json['contentStatus'], 2);
+
+        final restored = AudioItem.fromJson(json);
+        expect(restored.contentStatus, AudioContentStatus.silent);
       });
 
       test('toJson / fromJson 往返一致 — null', () {
@@ -572,7 +582,7 @@ void main() {
 
       test('copyWith 覆盖为 ok', () {
         final item = createSample().copyWith(
-          contentStatus: AudioContentStatus.suspectEmpty,
+          contentStatus: AudioContentStatus.damaged,
         );
         final copied = item.copyWith(contentStatus: AudioContentStatus.ok);
         expect(copied.contentStatus, AudioContentStatus.ok);
@@ -580,14 +590,14 @@ void main() {
 
       test('copyWith 不传参保持原值', () {
         final item = createSample().copyWith(
-          contentStatus: AudioContentStatus.suspectEmpty,
+          contentStatus: AudioContentStatus.silent,
         );
-        expect(item.copyWith().contentStatus, AudioContentStatus.suspectEmpty);
+        expect(item.copyWith().contentStatus, AudioContentStatus.silent);
       });
 
       test('copyWith 显式传 null', () {
         final item = createSample().copyWith(
-          contentStatus: AudioContentStatus.suspectEmpty,
+          contentStatus: AudioContentStatus.damaged,
         );
         expect(item.copyWith(contentStatus: null).contentStatus, isNull);
       });

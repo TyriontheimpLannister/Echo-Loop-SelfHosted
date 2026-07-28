@@ -6,15 +6,19 @@ library;
 
 import 'dart:convert';
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../models/audio_item.dart';
 import '../../models/collection.dart';
+import '../../providers/collection_provider.dart';
 import '../../theme/app_theme.dart';
 import 'podcast_models.dart';
+import 'widgets/podcast_subscribe_tile.dart';
 
 /// 展示 podcast 合集的详情（只读）。
 void showPodcastFeedInfoSheet(
@@ -23,31 +27,50 @@ void showPodcastFeedInfoSheet(
   String? refreshStatusText,
 }) {
   final l10n = AppLocalizations.of(context)!;
-  final meta = _decodeMeta(collection.podcastMetaJson);
-  final title = meta?.title ?? collection.name;
-  final description = meta?.description ?? collection.description;
-  final imageUrl = meta?.imageUrl ?? collection.coverUrl;
-  final lastRefreshed = collection.podcastLastRefreshedAt;
+  final collectionId = collection.id;
 
-  showPodcastInfoSheet(
-    context,
-    title: l10n.podcastDetails,
-    heroTitle: title,
-    heroAuthor: meta?.author,
-    heroDescription: description,
-    imageUrl: imageUrl,
-    dateText: refreshStatusText != null || lastRefreshed == null
-        ? null
-        : l10n.podcastLastRefreshed(_formatDateTime(lastRefreshed)),
-    refreshStatusText: refreshStatusText,
-    links: [
-      // 合集级详情只把 Apple Podcasts 原始输入展示为主链接；RSS 订阅输入
-      // 统一展示在 RSS 链接行，避免同一个 feed 被重复标成普通链接。
-      if (_isApplePodcastUrl(collection.podcastInputUrl))
-        PodcastInfoLink(l10n.podcastAppleLink, collection.podcastInputUrl!),
-      if (_hasText(collection.podcastFeedUrl))
-        PodcastInfoLink(l10n.podcastFeedUrl, collection.podcastFeedUrl!),
-    ],
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    // 用 Consumer 监听该合集：打开详情时常伴随自动刷新，刷新写回新描述后弹窗
+    // 内容实时更新，无需关闭重开（旧实现是打开瞬间的一次性快照，刷新完不重建）。
+    builder: (ctx) => Consumer(
+      builder: (ctx, ref, _) {
+        final current = ref.watch(
+          collectionListProvider.select(
+            (s) => s.rawCollections.firstWhere(
+              (c) => c.id == collectionId,
+              // 合集已被删除时回退到打开时的快照，避免抛异常。
+              orElse: () => collection,
+            ),
+          ),
+        );
+
+        final meta = _decodeMeta(current.podcastMetaJson);
+        final title = meta?.title ?? current.name;
+        final description = meta?.description ?? current.description;
+        final imageUrl = meta?.imageUrl ?? current.coverUrl;
+        final websiteUrl = meta?.websiteUrl;
+
+        return _InfoSheet(
+          title: l10n.podcastDetails,
+          heroTitle: title,
+          heroAuthor: meta?.author,
+          heroDescription: description,
+          imageUrl: imageUrl,
+          refreshStatusText: refreshStatusText,
+          metadata: _feedMetadata(l10n, meta),
+          links: [
+            if (_isApplePodcastUrl(current.podcastInputUrl))
+              PodcastInfoLink(l10n.podcastAppleLink, current.podcastInputUrl!),
+            if (websiteUrl != null && websiteUrl.trim().isNotEmpty)
+              PodcastInfoLink(_metadataLabel(l10n, 'Website'), websiteUrl),
+            if (_hasText(current.podcastFeedUrl))
+              PodcastInfoLink(l10n.podcastFeedUrl, current.podcastFeedUrl!),
+          ],
+        );
+      },
+    ),
   );
 }
 
@@ -94,6 +117,7 @@ void showPodcastInfoSheet(
   String? imageUrl,
   String? dateText,
   String? refreshStatusText,
+  List<PodcastInfoMeta> metadata = const [],
 }) {
   showModalBottomSheet<void>(
     context: context,
@@ -106,13 +130,46 @@ void showPodcastInfoSheet(
       imageUrl: imageUrl,
       dateText: dateText,
       refreshStatusText: refreshStatusText,
+      metadata: metadata,
       links: links,
     ),
   );
 }
 
+/// 展示 RSS feed 元信息详情。搜索预览和本地合集详情共用该入口的数据口径。
+void showPodcastFeedMetaInfoSheet(
+  BuildContext context, {
+  required PodcastFeedMeta meta,
+  String? applePodcastUrl,
+  String? fallbackImageUrl,
+}) {
+  final l10n = AppLocalizations.of(context)!;
+  final appleUrl = applePodcastUrl?.trim() ?? '';
+  final imageUrl = _hasText(meta.imageUrl) ? meta.imageUrl : fallbackImageUrl;
+  final websiteUrl = meta.websiteUrl;
+  showPodcastInfoSheet(
+    context,
+    title: l10n.podcastDetails,
+    heroTitle: meta.title,
+    heroAuthor: meta.author,
+    heroDescription: meta.description,
+    imageUrl: imageUrl,
+    metadata: _feedMetadata(l10n, meta),
+    links: [
+      if (appleUrl.isNotEmpty) PodcastInfoLink(l10n.podcastAppleLink, appleUrl),
+      if (websiteUrl != null && websiteUrl.trim().isNotEmpty)
+        PodcastInfoLink(_metadataLabel(l10n, 'Website'), websiteUrl),
+      PodcastInfoLink(l10n.podcastFeedUrl, meta.feedUrl),
+    ],
+  );
+}
+
 /// 展示 podcast episode 的详情（只读）。
-void showPodcastEpisodeInfoSheet(BuildContext context, AudioItem item) {
+void showPodcastEpisodeInfoSheet(
+  BuildContext context,
+  AudioItem item, {
+  String? podcastImageUrl,
+}) {
   final l10n = AppLocalizations.of(context)!;
   final episodeLink = _episodeLink(item);
   // meta 行：发布日期 · 时长，二者都可能缺省。
@@ -131,12 +188,50 @@ void showPodcastEpisodeInfoSheet(BuildContext context, AudioItem item) {
       heroDescription: item.podcastDescription,
       dateText: metaParts.isEmpty ? null : metaParts.join(' · '),
       // 单集封面优先用 episode 自带图，缺省时 _PodcastArtwork 会显示占位图标。
-      imageUrl: item.podcastImageUrl,
+      imageUrl: _hasText(item.podcastImageUrl)
+          ? item.podcastImageUrl
+          : podcastImageUrl,
       links: [
         if (_hasText(episodeLink))
           PodcastInfoLink(l10n.podcastOriginalLink, episodeLink!),
         if (_hasText(item.podcastEnclosureUrl))
           PodcastInfoLink(l10n.podcastEnclosureUrl, item.podcastEnclosureUrl!),
+      ],
+    ),
+  );
+}
+
+/// 展示预览态 podcast 单集（[PodcastEpisode]）的详情（只读）。
+///
+/// 与已入库的 [showPodcastEpisodeInfoSheet] 布局一致，但数据来自 RSS 预览而非
+/// 本地 [AudioItem]，用于订阅前在预览页查看单集标题/摘要/发布时间/下载链接。
+/// [podcastImageUrl] 作为单集无自带封面时的兜底头图。
+void showPodcastPreviewEpisodeSheet(
+  BuildContext context,
+  PodcastEpisode episode, {
+  String? podcastImageUrl,
+}) {
+  final l10n = AppLocalizations.of(context)!;
+  final metaParts = <String>[
+    if (episode.pubDate != null)
+      l10n.publishedOn(_formatDate(episode.pubDate!)),
+    if (episode.durationSeconds != null && episode.durationSeconds! > 0)
+      l10n.audioDuration(_formatDuration(episode.durationSeconds!)),
+  ];
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (ctx) => _InfoSheet(
+      title: l10n.podcastEpisodeMeta,
+      heroTitle: episode.title,
+      heroDescription: episode.description,
+      dateText: metaParts.isEmpty ? null : metaParts.join(' · '),
+      imageUrl: _hasText(episode.imageUrl) ? episode.imageUrl : podcastImageUrl,
+      links: [
+        if (_hasText(episode.link))
+          PodcastInfoLink(l10n.podcastOriginalLink, episode.link!),
+        if (_hasText(episode.enclosureUrl))
+          PodcastInfoLink(l10n.podcastEnclosureUrl, episode.enclosureUrl),
       ],
     ),
   );
@@ -202,6 +297,164 @@ class PodcastInfoLink {
   const PodcastInfoLink(this.label, this.url);
 }
 
+class PodcastInfoMeta {
+  final String label;
+  final String value;
+
+  const PodcastInfoMeta(this.label, this.value);
+}
+
+List<PodcastInfoMeta> _feedMetadata(
+  AppLocalizations l10n,
+  PodcastFeedMeta? meta,
+) {
+  if (meta == null) return const [];
+  final language = meta.language;
+  return [
+    if (meta.categories.isNotEmpty)
+      PodcastInfoMeta(
+        _metadataLabel(l10n, 'Categories'),
+        meta.categories.join(' · '),
+      ),
+    if (language != null && language.trim().isNotEmpty)
+      PodcastInfoMeta(_metadataLabel(l10n, 'Language'), language),
+  ];
+}
+
+String _metadataLabel(AppLocalizations l10n, String en) {
+  if (!l10n.localeName.startsWith('zh')) return en;
+  return switch (en) {
+    'Categories' => '类别',
+    'Language' => '语言',
+    'Website' => '官网',
+    _ => en,
+  };
+}
+
+/// 匹配正文中的 http/https 链接（到空白为止）。
+final _urlPattern = RegExp(r'https?://[^\s]+');
+
+/// 用外部浏览器打开链接，失败时提示。
+Future<void> _openExternalUrl(BuildContext context, String value) async {
+  final l10n = AppLocalizations.of(context)!;
+  final uri = Uri.tryParse(value);
+  if (uri == null) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.podcastOpenLinkFailed)));
+    return;
+  }
+  final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.podcastOpenLinkFailed)));
+  }
+}
+
+/// 可选中的正文文本，其中的 http/https 链接渲染为可点击（点击外部打开）。
+///
+/// 末尾常见标点（`.,;:!?)]}` 与全角句读）不并入链接，避免把句号带进 URL。
+class _LinkifiedText extends StatefulWidget {
+  final String text;
+  final TextStyle? style;
+
+  const _LinkifiedText({required this.text, this.style});
+
+  @override
+  State<_LinkifiedText> createState() => _LinkifiedTextState();
+}
+
+class _LinkifiedTextState extends State<_LinkifiedText> {
+  final List<TapGestureRecognizer> _recognizers = [];
+
+  @override
+  void dispose() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    _recognizers.clear();
+
+    final baseStyle = widget.style;
+    final linkStyle = baseStyle?.copyWith(
+      color: theme.colorScheme.primary,
+      decoration: TextDecoration.underline,
+      decorationColor: theme.colorScheme.primary,
+    );
+
+    // 按段落拆分：parser 已把块级标签（p / div / li / br）统一转成单个 `\n`，
+    // 因此每个换行都是一个段落边界。逐段渲染成独立的 SelectableText，段落之间
+    // 补一个固定间距，避免所有段落挤在一起（段内行距由 baseStyle.height 控制）。
+    final paragraphs = widget.text
+        .split('\n')
+        .where((p) => p.trim().isNotEmpty)
+        .toList();
+
+    final children = <Widget>[];
+    for (var i = 0; i < paragraphs.length; i++) {
+      if (i > 0) children.add(const SizedBox(height: AppSpacing.s));
+      children.add(
+        SelectableText.rich(
+          TextSpan(
+            style: baseStyle,
+            children: _buildSpans(context, paragraphs[i], linkStyle),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
+  }
+
+  /// 把单段文本切成普通文本 span 与可点击链接 span。
+  ///
+  /// 结尾常见标点不并入链接，避免把句号带进 URL；生成的 recognizer 登记到
+  /// [_recognizers]，由 [dispose] 统一释放。
+  List<InlineSpan> _buildSpans(
+    BuildContext context,
+    String text,
+    TextStyle? linkStyle,
+  ) {
+    final spans = <InlineSpan>[];
+    var index = 0;
+    for (final match in _urlPattern.allMatches(text)) {
+      if (match.start > index) {
+        spans.add(TextSpan(text: text.substring(index, match.start)));
+      }
+      var url = match.group(0)!;
+      var trailing = '';
+      // 把结尾标点从链接里剥出来，避免污染目标 URL。
+      while (url.isNotEmpty && '.,;:!?)]}）】。，、'.contains(url[url.length - 1])) {
+        trailing = url[url.length - 1] + trailing;
+        url = url.substring(0, url.length - 1);
+      }
+      final target = url;
+      final recognizer = TapGestureRecognizer()
+        ..onTap = () => _openExternalUrl(context, target);
+      _recognizers.add(recognizer);
+      spans.add(TextSpan(text: url, style: linkStyle, recognizer: recognizer));
+      if (trailing.isNotEmpty) spans.add(TextSpan(text: trailing));
+      index = match.end;
+    }
+    if (index < text.length) {
+      spans.add(TextSpan(text: text.substring(index)));
+    }
+    return spans;
+  }
+}
+
 class _InfoSheet extends StatelessWidget {
   final String title;
   final String heroTitle;
@@ -210,6 +463,7 @@ class _InfoSheet extends StatelessWidget {
   final String? imageUrl;
   final String? dateText;
   final String? refreshStatusText;
+  final List<PodcastInfoMeta> metadata;
   final List<PodcastInfoLink> links;
 
   const _InfoSheet({
@@ -221,6 +475,7 @@ class _InfoSheet extends StatelessWidget {
     this.imageUrl,
     this.dateText,
     this.refreshStatusText,
+    this.metadata = const [],
   });
 
   @override
@@ -265,6 +520,7 @@ class _InfoSheet extends StatelessWidget {
                 imageUrl: imageUrl,
                 dateText: dateText,
                 refreshStatusText: refreshStatusText,
+                metadata: metadata,
               ),
               if (links.isNotEmpty) ...[
                 const SizedBox(height: AppSpacing.l),
@@ -285,6 +541,7 @@ class _InfoHero extends StatelessWidget {
   final String? imageUrl;
   final String? dateText;
   final String? refreshStatusText;
+  final List<PodcastInfoMeta> metadata;
 
   const _InfoHero({
     required this.title,
@@ -293,6 +550,7 @@ class _InfoHero extends StatelessWidget {
     this.imageUrl,
     this.dateText,
     this.refreshStatusText,
+    this.metadata = const [],
   });
 
   @override
@@ -326,6 +584,10 @@ class _InfoHero extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           _RefreshStatusLine(text: refreshStatusText!),
         ],
+        if (metadata.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.s),
+          _MetadataList(metadata: metadata),
+        ],
       ],
     );
 
@@ -335,21 +597,46 @@ class _InfoHero extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _PodcastArtwork(imageUrl: imageUrl, size: 88),
+            PodcastCover(imageUrl: imageUrl, size: 88),
             const SizedBox(width: AppSpacing.m),
             Expanded(child: headColumn),
           ],
         ),
         if (_hasText(description)) ...[
           const SizedBox(height: AppSpacing.m),
-          SelectableText(
-            description!,
+          _LinkifiedText(
+            text: description!,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
               height: 1.35,
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+class _MetadataList extends StatelessWidget {
+  final List<PodcastInfoMeta> metadata;
+
+  const _MetadataList({required this.metadata});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      height: 1.25,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final item in metadata)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Text('${item.label}: ${item.value}', style: style),
+          ),
       ],
     );
   }
@@ -383,43 +670,6 @@ class _RefreshStatusLine extends StatelessWidget {
   }
 }
 
-class _PodcastArtwork extends StatelessWidget {
-  final String? imageUrl;
-  final double size;
-
-  const _PodcastArtwork({required this.imageUrl, required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final placeholder = DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Icon(
-        Icons.podcasts_rounded,
-        color: theme.colorScheme.onPrimaryContainer,
-      ),
-    );
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox.square(
-        dimension: size,
-        child: !_hasText(imageUrl)
-            ? placeholder
-            : CachedNetworkImage(
-                imageUrl: imageUrl!,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => placeholder,
-                errorWidget: (_, __, ___) => placeholder,
-              ),
-      ),
-    );
-  }
-}
-
 class _LinkRow extends StatelessWidget {
   final PodcastInfoLink link;
 
@@ -428,77 +678,100 @@ class _LinkRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // 主点击打开链接；桌面右键（onSecondaryTapDown）/ 移动端长按
+    // （onLongPressStart）在指针处弹出「复制」菜单，不常驻复制图标。
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.s),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => _openLink(context, link.url),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s,
-            vertical: AppSpacing.s,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                Icons.link_rounded,
-                size: 20,
-                color: theme.colorScheme.primary,
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      link.label,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      link.url,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                        decoration: TextDecoration.underline,
-                        decorationColor: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ],
+      child: GestureDetector(
+        onSecondaryTapDown: (d) => _showCopyMenu(context, d.globalPosition),
+        onLongPressStart: (d) => _showCopyMenu(context, d.globalPosition),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => _openExternalUrl(context, link.url),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s,
+              vertical: AppSpacing.s,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.link_rounded,
+                  size: 20,
+                  color: theme.colorScheme.primary,
                 ),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Icon(
-                Icons.open_in_new_rounded,
-                size: 18,
-                color: theme.colorScheme.primary,
-              ),
-            ],
+                const SizedBox(width: AppSpacing.s),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        link.label,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        link.url,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          decoration: TextDecoration.underline,
+                          decorationColor: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.s),
+                Icon(
+                  Icons.open_in_new_rounded,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Future<void> _openLink(BuildContext context, String value) async {
+  /// 在 [position]（全局坐标）弹出仅含「复制」的上下文菜单。
+  Future<void> _showCopyMenu(BuildContext context, Offset position) async {
     final l10n = AppLocalizations.of(context)!;
-    final uri = Uri.tryParse(value);
-    if (uri == null) {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+    final selected = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(40, 40),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'copy',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.copy_rounded, size: 18),
+              const SizedBox(width: AppSpacing.s),
+              Text(l10n.copy),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (selected == 'copy' && context.mounted) {
+      await Clipboard.setData(ClipboardData(text: link.url));
+      if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(l10n.podcastOpenLinkFailed)));
-      return;
-    }
-
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.podcastOpenLinkFailed)));
+      ).showSnackBar(SnackBar(content: Text(l10n.linkCopied)));
     }
   }
 }

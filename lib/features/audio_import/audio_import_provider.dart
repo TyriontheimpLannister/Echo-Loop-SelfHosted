@@ -162,7 +162,7 @@ class PodcastDownloadController extends _$PodcastDownloadController {
       if (sid != _sessionId) return false;
 
       // 解码失败（durationSeconds==0）不再回退 RSS 时长：宁可不显示，也不展示
-      // 假时长掩盖空音频。内容检测会据此判 suspectEmpty。
+      // 假时长。内容检测另用 FFmpeg 短解码和波形判断，不依赖此时长。
       await ref
           .read(audioLibraryProvider.notifier)
           .updateAudioItem(

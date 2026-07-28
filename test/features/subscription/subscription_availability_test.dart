@@ -104,6 +104,46 @@ void main() {
       );
     });
 
+    test('商店包 Web 支付入口需要商店渠道、Paddle 配置和远程开关同时满足', () {
+      for (final channel in [
+        ClientPaymentChannel.appleStore,
+        ClientPaymentChannel.googlePlay,
+      ]) {
+        expect(
+          showStoreWebCheckoutFallbackFor(
+            channel: channel,
+            webConfigured: true,
+            remoteEnabled: true,
+          ),
+          isTrue,
+        );
+        expect(
+          showStoreWebCheckoutFallbackFor(
+            channel: channel,
+            webConfigured: false,
+            remoteEnabled: true,
+          ),
+          isFalse,
+        );
+        expect(
+          showStoreWebCheckoutFallbackFor(
+            channel: channel,
+            webConfigured: true,
+            remoteEnabled: false,
+          ),
+          isFalse,
+        );
+      }
+      expect(
+        showStoreWebCheckoutFallbackFor(
+          channel: ClientPaymentChannel.web,
+          webConfigured: true,
+          remoteEnabled: true,
+        ),
+        isFalse,
+      );
+    });
+
     test('未知 identity 保守隐藏', () {
       expect(
         subscriptionAvailableFor(

@@ -41,11 +41,11 @@ Future<CleanupResult> cleanupRecordingTempFiles({
   return _cleanupDirectory(nsTmpDir, minAge: minAge);
 }
 
-/// 启动时清理：删除 `Library/Caches` 中超过 [minAge] 的 `pdf_export_` 临时目录。
+/// 启动时清理：删除 `Library/Caches` 中超过 [minAge] 的分享导出临时目录。
 ///
 /// PDF 分享的临时文件不能在分享后立即删除（macOS 的 `shareXFiles` 在
 /// AirDrop 传输开始前就 resolve，见 pdf_preview_screen `_share`），
-/// 故由此处兜底回收。默认 1 天：远大于任何在途分享的时长，
+/// 日志分享同理。故由此处兜底回收。默认 1 天：远大于任何在途分享的时长，
 /// 不会删到正在传输的文件。
 Future<CleanupResult> cleanupStalePdfExportTemp({
   Duration minAge = const Duration(days: 1),
@@ -55,8 +55,7 @@ Future<CleanupResult> cleanupStalePdfExportTemp({
     return _cleanupDirectory(
       cachesDir,
       minAge: minAge,
-      nameFilter: (path) =>
-          path.split(Platform.pathSeparator).last.startsWith('pdf_export_'),
+      nameFilter: _isShareExportTemp,
     );
   } catch (_) {
     return const CleanupResult(freedBytes: 0);
@@ -68,14 +67,18 @@ Future<CleanupResult> cleanupStalePdfExportTemp({
 /// 仅这些目录可在清缓存时删除，其余条目（系统 URLCache `Cache.db`、
 /// `app_network_images`、各框架缓存）一律跳过。
 /// 前缀来源：`audio_export_service.dart`、`backup_service.dart`、
-/// `study_pdf_export_service.dart` 的 `_createTempDir`。
+/// `study_pdf_export_service.dart`、`log_viewer_screen.dart` 的临时导出。
 const _ownCacheTempPrefixes = <String>[
   'audio_export_',
   'echoloop_export_',
   'echoloop_import_',
   'echoloop_backup_',
   'pdf_export_',
+  'log_export_',
 ];
+
+/// 分享面板使用的临时导出目录前缀。
+const _shareExportTempPrefixes = <String>['pdf_export_', 'log_export_'];
 
 /// 设置页「清除缓存」：清理 tmp/（全量）+ Library/Caches（仅 app 自建临时目录）。
 ///
@@ -106,6 +109,12 @@ Future<CleanupResult> cleanupAllTempFiles() async {
 bool _isOwnCacheTemp(String path) {
   final name = path.split(Platform.pathSeparator).last;
   return _ownCacheTempPrefixes.any(name.startsWith);
+}
+
+/// 判断 [path] 是否为分享面板使用的临时导出目录。
+bool _isShareExportTemp(String path) {
+  final name = path.split(Platform.pathSeparator).last;
+  return _shareExportTempPrefixes.any(name.startsWith);
 }
 
 /// 获取沙盒根/tmp/ 目录（iOS/macOS），不存在时返回 null。

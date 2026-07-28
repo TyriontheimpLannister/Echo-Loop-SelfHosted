@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import 'analytics_service.dart';
 import 'models/event_names.dart';
+import '../services/app_logger.dart';
 
 /// 页面浏览事件观察者
 ///
@@ -24,18 +25,45 @@ class AnalyticsObserver extends NavigatorObserver {
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _logNavigationAction('didPush', route, previousRoute);
     _trackScreenView(route);
   }
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    if (newRoute != null) _trackScreenView(newRoute);
+    if (newRoute != null) {
+      _logNavigationAction('didReplace', newRoute, oldRoute);
+      _trackScreenView(newRoute);
+    }
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (previousRoute != null) _trackScreenView(previousRoute);
+    _logNavigationAction('didPop', route, previousRoute);
+    if (previousRoute != null) {
+      _trackScreenView(previousRoute);
+    }
   }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _logNavigationAction('didRemove', route, previousRoute);
+  }
+
+  /// 打印 Navigator 层动作，配合 GoRouter path 日志判断是否发生双 pop。
+  void _logNavigationAction(
+    String action,
+    Route<dynamic> route,
+    Route<dynamic>? previousRoute,
+  ) {
+    AppLogger.log(
+      'Navigation',
+      '$action route=${_routeName(route)} previous=${_routeName(previousRoute)}',
+    );
+  }
+
+  static String _routeName(Route<dynamic>? route) =>
+      route?.settings.name ?? '(null)';
 
   /// 提取路由名称并上报 screen_view 事件
   void _trackScreenView(Route<dynamic> route) {

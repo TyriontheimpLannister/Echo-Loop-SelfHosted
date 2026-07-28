@@ -55,3 +55,6 @@ METHOD.md
 
 # Claude Code runtime files
 .claude/scheduled_tasks.lock
+
+# Test artifacts
+test-results.json

@@ -103,6 +103,16 @@ class _GateEngine implements TtsEngine {
   Future<void> dispose() async {}
 }
 
+/// 等待 fake 引擎收到指定数量的合成请求，避免测试依赖固定 event queue 次数。
+Future<void> _waitForGateCount(_GateEngine engine, int count) async {
+  await expectLater(
+    Stream<void>.periodic(
+      const Duration(milliseconds: 1),
+    ).map((_) => engine.gates.length),
+    emitsThrough(count),
+  );
+}
+
 class _FakeTtsCacheDao implements TtsCacheDao {
   @override
   Future<TtsCacheData?> getByKey(String cacheKey, {Duration? slideTtl}) async =>
@@ -219,8 +229,7 @@ void main() {
       final notifier = c.read(ttsControllerProvider.notifier);
       await Future<void>(() {}); // 等首次 configure 落定
       final first = notifier.speak('first text', key: 'same_voice');
-      await pumpEventQueue();
-      expect(engine.gates, hasLength(1));
+      await _waitForGateCount(engine, 1);
 
       final second = notifier.speak('second text', key: 'same_voice');
       await pumpEventQueue();
@@ -229,8 +238,7 @@ void main() {
       expect(c.read(ttsControllerProvider).speakingKey, 'same_voice');
 
       engine.gates[0].complete();
-      await pumpEventQueue();
-      expect(engine.gates, hasLength(2));
+      await _waitForGateCount(engine, 2);
       await first;
       expect(c.read(ttsControllerProvider).speakingKey, 'same_voice');
 

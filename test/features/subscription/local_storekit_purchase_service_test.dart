@@ -202,7 +202,7 @@ void main() {
       expect((await service.currentEntitlement()).isPremium, isTrue);
 
       // 退订后 restore：先清空、restorePurchases 不再投递 → 收敛为 free。
-      final ent = await service.restore();
+      final ent = (await service.restore()).entitlement;
       expect(ent.isPremium, isFalse);
     });
 
@@ -221,7 +221,7 @@ void main() {
         iap: iap,
         restoreSettleDelay: Duration.zero,
       );
-      final ent = await service.restore();
+      final ent = (await service.restore()).entitlement;
       expect(ent.isPremium, isTrue);
       expect(ent.productId, echoLoopMonthlyProductId);
     });

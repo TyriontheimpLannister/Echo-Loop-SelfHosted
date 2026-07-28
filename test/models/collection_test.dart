@@ -28,7 +28,26 @@ void main() {
         expect(col.id, 'col-1');
         expect(col.name, '我的合集');
         expect(col.createdDate, now);
+        expect(col.updatedAt, now);
         expect(col.isPinned, true);
+      });
+
+      test('解析 updatedAt，旧数据缺失时回退 createdDate', () {
+        final updatedAt = DateTime(2026, 1, 16);
+        final withUpdatedAt = Collection.fromJson({
+          'id': 'col-1',
+          'name': '新格式',
+          'createdDate': now.toIso8601String(),
+          'updatedAt': updatedAt.toIso8601String(),
+        });
+        final legacy = Collection.fromJson({
+          'id': 'col-2',
+          'name': '旧格式',
+          'createdDate': now.toIso8601String(),
+        });
+
+        expect(withUpdatedAt.updatedAt, updatedAt);
+        expect(legacy.updatedAt, now);
       });
 
       test('兼容旧 isStarred key', () {
@@ -78,10 +97,16 @@ void main() {
     group('copyWith', () {
       test('部分字段覆盖', () {
         final col = createSample();
-        final copied = col.copyWith(name: '新合集', isPinned: false);
+        final updatedAt = DateTime(2026, 1, 16);
+        final copied = col.copyWith(
+          name: '新合集',
+          isPinned: false,
+          updatedAt: updatedAt,
+        );
 
         expect(copied.name, '新合集');
         expect(copied.isPinned, isFalse);
+        expect(copied.updatedAt, updatedAt);
         expect(copied.id, col.id);
       });
     });

@@ -67,6 +67,30 @@ class _TestLearningSettingsNotifier extends Notifier<LearningSettings>
   }
 
   @override
+  Future<void> setAutoShowAiExplanation(bool enabled) async {
+    if (state.autoShowAiExplanation == enabled) return;
+    state = state.copyWith(autoShowAiExplanation: enabled);
+  }
+
+  @override
+  Future<void> setAutoShowAiAnalysis(bool enabled) async {
+    if (state.autoShowAiAnalysis == enabled) return;
+    state = state.copyWith(autoShowAiAnalysis: enabled);
+  }
+
+  @override
+  Future<void> setAutoShowAiTranslation(bool enabled) async {
+    if (state.autoShowAiTranslation == enabled) return;
+    state = state.copyWith(autoShowAiTranslation: enabled);
+  }
+
+  @override
+  Future<void> setAutoShowAiSenseGroups(bool enabled) async {
+    if (state.autoShowAiSenseGroups == enabled) return;
+    state = state.copyWith(autoShowAiSenseGroups: enabled);
+  }
+
+  @override
   Future<void> setAutoPlayRetellRecordingAfterCompletion(bool enabled) async {
     if (state.autoPlayRetellRecordingAfterCompletion == enabled) return;
     state = state.copyWith(autoPlayRetellRecordingAfterCompletion: enabled);
@@ -1976,6 +2000,137 @@ void main() {
       await notifier(container).pauseProgress('nonexistent');
 
       verifyNever(() => mockDao.setPaused(any(), any()));
+    });
+  });
+
+  // ========== unlockCurrentReview — 立即解锁当前复习轮 ==========
+
+  group('unlockCurrentReview', () {
+    /// 构造一个锁定中的 review1 进度：2 小时前完成上一轮（间隔 18h，未到期）
+    LearningProgress lockedReview1(DateTime now) => LearningProgress(
+      audioItemId: 'a1',
+      currentStage: LearningStage.review1,
+      currentSubStage: SubStageType.reviewDifficultPractice,
+      firstLearnCompletedAt: now.subtract(const Duration(days: 1)),
+      lastStageCompletedAt: now.subtract(const Duration(hours: 2)),
+      updatedAt: now,
+    );
+
+    test('锁定中的复习轮 → 写 manualUnlockAt 并解除锁定', () async {
+      final now = DateTime(2026, 7, 20, 10, 0);
+      final progress = lockedReview1(now);
+      expect(progress.isReviewLockedAt(now), isTrue);
+
+      final container = createContainer(
+        LearningProgressState(progressMap: {'a1': progress}),
+        nowGetter: () => now,
+      );
+
+      await notifier(container).unlockCurrentReview('a1');
+
+      final after = readProgress(container, 'a1')!;
+      expect(after.manualUnlockAt, isNotNull);
+      expect(after.isReviewLockedAt(now), isFalse);
+      // lastStageCompletedAt 不被篡改
+      expect(after.lastStageCompletedAt, progress.lastStageCompletedAt);
+
+      // 持久化 companion 携带非空 manualUnlockAt
+      final captured =
+          verify(() => mockDao.upsert(captureAny())).captured.single
+              as db.LearningProgressesCompanion;
+      expect(captured.manualUnlockAt.value, isNotNull);
+    });
+
+    test('解锁后 completeCurrentSubStage 不再被锁定 guard 早退', () async {
+      final now = DateTime(2026, 7, 20, 10, 0);
+      final progress = lockedReview1(now);
+      final container = createContainer(
+        LearningProgressState(progressMap: {'a1': progress}),
+        nowGetter: () => now,
+      );
+
+      // 未解锁时被 guard 早退，不写 completion
+      await notifier(container).completeCurrentSubStage('a1');
+      verifyNever(() => mockStageCompletionDao.insertRecord(any()));
+
+      await notifier(container).unlockCurrentReview('a1');
+      await notifier(container).completeCurrentSubStage('a1');
+
+      verify(() => mockStageCompletionDao.insertRecord(any())).called(1);
+      final after = readProgress(container, 'a1')!;
+      // review1 v2 plan = [difficult, blindListen]，推进到 blindListen
+      expect(after.currentSubStage, SubStageType.blindListen);
+      // 同 stage 内推进不清除解锁标记（做到一半仍保持解锁）
+      expect(after.manualUnlockAt, isNotNull);
+    });
+
+    test('跨 stage 推进后 manualUnlockAt 被清除，下一轮恢复时间锁', () async {
+      final now = DateTime(2026, 7, 20, 10, 0);
+      // 锁定中的 review1，当前在末项 blindListen（difficult 已完成）
+      final progress = LearningProgress(
+        audioItemId: 'a1',
+        currentStage: LearningStage.review1,
+        currentSubStage: SubStageType.blindListen,
+        firstLearnCompletedAt: now.subtract(const Duration(days: 1)),
+        lastStageCompletedAt: now.subtract(const Duration(hours: 2)),
+        updatedAt: now,
+      );
+      final container = createContainer(
+        LearningProgressState(progressMap: {'a1': progress}),
+        nowGetter: () => now,
+      );
+
+      await notifier(container).unlockCurrentReview('a1');
+      await notifier(container).completeCurrentSubStage('a1');
+
+      final after = readProgress(container, 'a1')!;
+      expect(after.currentStage, LearningStage.review2);
+      expect(after.manualUnlockAt, isNull);
+      // 下一轮按实际完成时间 + 间隔正常锁定
+      expect(after.isReviewLockedAt(DateTime.now()), isTrue);
+    });
+
+    test('非复习阶段（firstLearn）no-op', () async {
+      final now = DateTime(2026, 7, 20, 10, 0);
+      final progress = LearningProgress(audioItemId: 'a1', updatedAt: now);
+      final container = createContainer(
+        LearningProgressState(progressMap: {'a1': progress}),
+        nowGetter: () => now,
+      );
+
+      await notifier(container).unlockCurrentReview('a1');
+
+      expect(readProgress(container, 'a1')?.manualUnlockAt, isNull);
+      verifyNever(() => mockDao.upsert(any()));
+    });
+
+    test('已到期（未锁定）no-op 幂等', () async {
+      final now = DateTime(2026, 7, 20, 10, 0);
+      final progress = LearningProgress(
+        audioItemId: 'a1',
+        currentStage: LearningStage.review1,
+        currentSubStage: SubStageType.reviewDifficultPractice,
+        lastStageCompletedAt: now.subtract(const Duration(hours: 20)),
+        updatedAt: now,
+      );
+      expect(progress.isReviewLockedAt(now), isFalse);
+      final container = createContainer(
+        LearningProgressState(progressMap: {'a1': progress}),
+        nowGetter: () => now,
+      );
+
+      await notifier(container).unlockCurrentReview('a1');
+
+      expect(readProgress(container, 'a1')?.manualUnlockAt, isNull);
+      verifyNever(() => mockDao.upsert(any()));
+    });
+
+    test('audioItemId 不存在时安全返回', () async {
+      final container = createContainer(const LearningProgressState());
+
+      await notifier(container).unlockCurrentReview('nonexistent');
+
+      verifyNever(() => mockDao.upsert(any()));
     });
   });
 

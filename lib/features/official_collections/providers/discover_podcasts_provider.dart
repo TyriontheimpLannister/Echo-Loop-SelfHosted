@@ -19,14 +19,3 @@ List<CatalogPodcast>? discoverPodcasts(Ref ref) {
   }
   return catalog.podcastCatalogs;
 }
-
-/// 从 catalog 缓存中按 id 查找单个精选 Podcast。
-@Riverpod(keepAlive: true)
-CatalogPodcast? podcastCatalogDetail(Ref ref, String podcastId) {
-  final catalog = ref.watch(cachedCatalogProvider);
-  if (catalog == null) return null;
-  for (final podcast in catalog.podcastCatalogs) {
-    if (podcast.id == podcastId) return podcast;
-  }
-  return null;
-}

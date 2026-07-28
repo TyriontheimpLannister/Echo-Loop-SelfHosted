@@ -54,10 +54,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get premiumBenefitAnalysis => '更多 AI 句子拆解';
 
   @override
-  String get premiumBenefitWordAnalysis => '更多 AI 单词讲解';
+  String get premiumBenefitWordAnalysis => '更多 AI 词汇解析';
 
   @override
   String get premiumBenefitTranscription => '更多 AI 字幕转录';
+
+  @override
+  String get premiumBenefitAiAssistant => '更多 AI 助手对话次数';
+
+  @override
+  String get premiumBenefitPrioritySupport => '优先客户支持';
 
   @override
   String get premiumBenefitSenseGroups => '更多 AI 句子意群拆分';
@@ -120,7 +126,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get premiumLoginRequired => '订阅前请先登录。';
 
   @override
+  String get premiumRestoreLoginRequired => '恢复购买前请先登录。';
+
+  @override
   String get premiumPurchaseFailed => '购买失败，请重试。';
+
+  @override
+  String get premiumRestoreAccountMismatch =>
+      '此订阅已绑定到另一个 Echo Loop 账号。请登录原账号后重试。';
 
   @override
   String get premiumRestoreNone => '未找到可恢复的购买。';
@@ -129,22 +142,28 @@ class AppLocalizationsZh extends AppLocalizations {
   String get premiumRestored => '已恢复购买。';
 
   @override
-  String get premiumWebCheckoutCta => '前往订阅结账';
+  String get premiumWebCheckoutCta => '查看订阅方案';
 
   @override
-  String get premiumWebCheckoutHint => '套餐、当前价格和优惠会在安全结账页显示。';
+  String get premiumUseWebCheckoutFallback => '商店支付遇到问题？使用网页支付';
+
+  @override
+  String get premiumUseStoreCheckout => '继续使用商店支付';
 
   @override
   String get premiumWebVerifying => '正在等待支付结果确认…';
-
-  @override
-  String get premiumWebCheckDone => '我已完成支付';
 
   @override
   String get premiumWebOpenFailed => '无法打开结账页面，请重试。';
 
   @override
   String get premiumRefresh => '刷新';
+
+  @override
+  String get premiumRefreshStatus => '刷新会员状态';
+
+  @override
+  String get premiumPurchasePendingSync => '购买成功，会员权益同步中，稍后自动生效。';
 
   @override
   String get premiumPeriodMonthly => '月付';
@@ -163,6 +182,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get premiumPriceSuffixFirstYear => '/首年';
+
+  @override
+  String get premiumPriceSuffixFirstMonth => '/首月';
 
   @override
   String get premiumPriceSuffixLifetime => '一次性';
@@ -185,11 +207,6 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String premiumIntroFirstMonth(String price) {
     return '首月 $price';
-  }
-
-  @override
-  String premiumIntroFirstPeriod(String price) {
-    return '首期 $price';
   }
 
   @override
@@ -232,9 +249,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get premiumOfferPeriodMonth => '月';
-
-  @override
-  String get premiumOfferPeriodGeneric => '期';
 
   @override
   String get premiumTermsShort => '服务条款';
@@ -293,7 +307,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get add => '添加';
 
   @override
+  String get importAction => '导入';
+
+  @override
   String get selectAudioFile => '选择音频文件';
+
+  @override
+  String get subtitlePairedBadge => '已匹配字幕，将一并导入';
 
   @override
   String get audioFilePickerCloudDriveHint =>
@@ -621,6 +641,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String updatedOn(String date) {
+    return '更新于 $date';
+  }
+
+  @override
   String get collections => '合集';
 
   @override
@@ -652,7 +677,20 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String deleteCollectionConfirm(String name) {
-    return '确定要删除「$name」吗？合集中的音频文件不会被删除。';
+    return '确定要删除「$name」吗？';
+  }
+
+  @override
+  String get deleteCollectionAlsoDeleteAudio => '同时删除音频文件';
+
+  @override
+  String deleteCollectionKeepAudioHint(int count) {
+    return '合集中共 $count 个音频文件，将保留。';
+  }
+
+  @override
+  String deleteCollectionDeleteAudioHint(int count) {
+    return '合集中共 $count 个音频文件，将一并删除。';
   }
 
   @override
@@ -697,7 +735,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get discoverEntryTitleA => '发现精选资源';
+  String get discoverEntryTitleA => '发现资源';
 
   @override
   String get discoverEntrySubtitleA => '播客 · 托福 · 雅思 · 专四专八，教材...';
@@ -749,6 +787,33 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get audioNotInOtherCollections => '未被其它合集引用，可放心删除。';
+
+  @override
+  String selectedCount(int count) {
+    return '已选 $count 项';
+  }
+
+  @override
+  String get selectAll => '全选';
+
+  @override
+  String get deselectAll => '取消全选';
+
+  @override
+  String removeFromCollectionBatch(int count) {
+    return '从合集移除 $count 项';
+  }
+
+  @override
+  String permanentlyDeleteBatch(int count) {
+    return '彻底删除 $count 项音频';
+  }
+
+  @override
+  String get permanentlyDeleteBatchHint => '将删除音频文件，并从所有合集移除。';
+
+  @override
+  String get removeFromCollectionBatchHint => '仅从当前合集移除，音频文件保留。';
 
   @override
   String get emptyCollection => '合集中还没有音频';
@@ -807,7 +872,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String stepProgress(int completed, int total) {
-    return '$completed/$total 完成';
+    return '$completed/$total';
   }
 
   @override
@@ -876,6 +941,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get reviewUnlocked => '已解锁';
+
+  @override
+  String get unlockReviewNow => '立即解锁';
 
   @override
   String get startLearning => '开始学习';
@@ -1899,6 +1967,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get transcriptionUploading => '上传中…';
 
   @override
+  String get transcriptionCompressing => '音频压缩中…';
+
+  @override
   String get transcriptionProcessing => '转录中…';
 
   @override
@@ -1918,6 +1989,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get transcriptionErrorUnknown => '请检查音频是否正常，稍后再试';
+
+  @override
+  String get transcriptionErrorCompression => '音频压缩失败，请检查音频后重试';
+
+  @override
+  String get transcriptionErrorCompressedFileTooLarge => '压缩后文件仍超过 25MB';
 
   @override
   String get transcriptionEmptyResult => '未检测到语音';
@@ -1969,6 +2046,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get audioContentEmptyWarning => '疑似空音频';
 
   @override
+  String get audioContentDamagedWarning => '音频异常';
+
+  @override
+  String get audioContentSilentWarning => '疑似静音音频';
+
+  @override
+  String get transcriptionDamagedConfirmTitle => '音频可能损坏';
+
+  @override
+  String get transcriptionDamagedConfirmMessage => '该音频可能已损坏或格式不兼容，仍要转录吗？';
+
+  @override
   String get transcriptionSilentConfirmTitle => '音频疑似为空';
 
   @override
@@ -1976,6 +2065,19 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get transcriptionSilentConfirmProceed => '仍要转录';
+
+  @override
+  String transcriptionAudioFileSize(Object size) {
+    return '文件大小：$size';
+  }
+
+  @override
+  String transcriptionAudioDuration(Object duration) {
+    return '时长：$duration';
+  }
+
+  @override
+  String get transcriptionAudioUnknown => '未检测到';
 
   @override
   String get currentSubtitleExists => '当前：已有字幕';
@@ -3028,6 +3130,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get importList => '导入列表';
+
+  @override
   String filesSelected(int count) {
     return '已选择 $count 个文件';
   }
@@ -3038,8 +3143,23 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String importingFileProgress(int current, int total, String name) {
+    return '正在导入 $current/$total：$name';
+  }
+
+  @override
   String multipleAudioAdded(int count) {
     return '已添加 $count 个音频';
+  }
+
+  @override
+  String audioImportedCount(int count) {
+    return '成功导入 $count 个音频';
+  }
+
+  @override
+  String audioImportedWithSubtitleCount(int count) {
+    return '其中 $count 个包含字幕';
   }
 
   @override
@@ -3048,7 +3168,17 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get duplicatesSkippedDetail => '以下音频已在本合集中，已跳过：';
+  String get duplicatesSkippedDetail => '以下音频与本合集中已有音频内容完全相同，已跳过：';
+
+  @override
+  String duplicateExistingFileName(String name) {
+    return '重复文件名: $name';
+  }
+
+  @override
+  String duplicateOfExisting(String name) {
+    return '与「$name」内容相同';
+  }
 
   @override
   String get removeFile => '移除';
@@ -3193,13 +3323,6 @@ class AppLocalizationsZh extends AppLocalizations {
       '遇到听不懂的句子时点这里，会自动标记为难句并进入讲解模式。';
 
   @override
-  String get guideIntensiveListenAnnotationContinueDescription =>
-      '搞懂这句后点「继续」进入下一句。';
-
-  @override
-  String get guideIntensiveListenAnnotationPlayDescription => '点击播放按钮，播放当前句。';
-
-  @override
   String get guideSentenceTileNumberDescription => '点击编号从这句开始播放。';
 
   @override
@@ -3239,6 +3362,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get resetNewUserGuideDone => '新手引导已重置';
 
   @override
+  String get newUserGuideToggle => '新手引导';
+
+  @override
+  String get newUserGuideSubtitle => '开启后在各页面首次使用时显示操作引导';
+
+  @override
+  String get newUserGuideResetAction => '重置';
+
+  @override
   String get resetOnboarding => '重置 Onboarding 问卷';
 
   @override
@@ -3257,7 +3389,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get discoverRetry => '重试';
 
   @override
-  String get discoverPodcastEntryTitle => '精选播客';
+  String get discoverPodcastEntryTitle => '播客';
 
   @override
   String discoverPodcastEntrySubtitle(int count) {
@@ -3589,13 +3721,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get autoSkipRetellSubtitle => '学习计划遇到复述任务时自动跳过';
 
   @override
-  String get autoSkipRetellDescription => '开启后，复述类任务会自动标记为已跳过；你随时可以在随心听里完成它们。';
-
-  @override
   String get autoExpandCachedAnnotationToggle => '自动展开句子讲解';
 
   @override
   String get autoExpandCachedAnnotationSubtitle => '自动展示查看过的翻译、解析和意群';
+
+  @override
+  String get autoShowAiExplanationToggle => '自动显示 AI 讲解';
+
+  @override
+  String get autoShowAiExplanationSubtitle => '进入句子讲解时自动显示选中的 AI 辅助内容';
+
+  @override
+  String get autoShowAiAnalysisToggle => 'AI 解析';
+
+  @override
+  String get autoShowAiTranslationToggle => 'AI 翻译';
+
+  @override
+  String get autoShowAiSenseGroupsToggle => 'AI 意群分割';
 
   @override
   String get autoPlayRetellRecordingToggle => '自动播放复述录音';
@@ -3969,6 +4113,104 @@ class AppLocalizationsZh extends AppLocalizations {
   String get importAudioFromUrlDescription => '粘贴音频直链，下载后加入资源库';
 
   @override
+  String get importAudioFromCloudDrive => '从网盘导入';
+
+  @override
+  String get importAudioFromBaiduNetdisk => '从百度网盘导入';
+
+  @override
+  String get cloudDriveSourceShort => '网盘';
+
+  @override
+  String get baiduNetdisk => '百度网盘';
+
+  @override
+  String get baiduNetdiskAllFiles => '全部文件';
+
+  @override
+  String get baiduNetdiskWaitingAuthorization => '等待百度授权...';
+
+  @override
+  String get baiduNetdiskLoadingFiles => '正在加载百度网盘文件...';
+
+  @override
+  String get baiduNetdiskImportFailed => '百度网盘导入失败。';
+
+  @override
+  String get baiduNetdiskConnectTitle => '连接百度网盘';
+
+  @override
+  String get baiduNetdiskConnectDescription =>
+      '授权 Echo Loop 浏览你的百度网盘，并导入选中的音频文件。';
+
+  @override
+  String get baiduNetdiskConnectAction => '连接百度网盘';
+
+  @override
+  String get baiduNetdiskLogoutTooltip => '退出百度网盘登录';
+
+  @override
+  String get baiduNetdiskSelectAllAction => '全选';
+
+  @override
+  String get baiduNetdiskClearSelectionAction => '取消';
+
+  @override
+  String get baiduNetdiskLogoutTitle => '退出百度网盘登录？';
+
+  @override
+  String get baiduNetdiskLogoutMessage => 'Echo Loop 会清除当前设备上保存的百度网盘授权。';
+
+  @override
+  String get baiduNetdiskLogoutConfirm => '退出登录';
+
+  @override
+  String get baiduNetdiskNoSupportedAudio => '此文件夹中没有支持的音频文件。';
+
+  @override
+  String get importAudioShort => '导入';
+
+  @override
+  String importAudioSelectedCount(int count) {
+    return '导入 $count 个';
+  }
+
+  @override
+  String importAudioAndSubtitleCount(int audioCount, int subtitleCount) {
+    String _temp0 = intl.Intl.pluralLogic(
+      audioCount,
+      locale: localeName,
+      other: '$audioCount 个音频',
+      zero: '',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      subtitleCount,
+      locale: localeName,
+      other: '，$subtitleCount 个字幕',
+      zero: '',
+    );
+    return '导入（$_temp0$_temp1）';
+  }
+
+  @override
+  String get baiduNetdiskImporting => '正在导入...';
+
+  @override
+  String baiduNetdiskImportingFile(String name) {
+    return '正在导入 $name...';
+  }
+
+  @override
+  String baiduNetdiskImportedCount(int count) {
+    return '已从百度网盘导入 $count 个';
+  }
+
+  @override
+  String baiduNetdiskSkippedSummary(int duplicates, int failures) {
+    return '跳过重复项：$duplicates · 失败：$failures';
+  }
+
+  @override
   String get audioUrlLabel => '音频链接';
 
   @override
@@ -4022,6 +4264,21 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get podcastUrlHint =>
       'https://podcasts.apple.com/... 或 https://…/feed.xml';
+
+  @override
+  String get podcastSearchHint => '搜索播客或粘贴链接';
+
+  @override
+  String get podcastSearchEmpty => '没有找到相关播客';
+
+  @override
+  String get podcastSearchFailed => '搜索失败，请重试';
+
+  @override
+  String get podcastSubscribeThisLink => '订阅此链接';
+
+  @override
+  String get featuredPodcasts => '精选播客';
 
   @override
   String get podcastSubscribing => '正在获取 Podcast Feed…';
@@ -4313,4 +4570,90 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get dictAiMultiBackground => '背景知识';
+
+  @override
+  String get chatOpenTooltip => '问 AI';
+
+  @override
+  String get chatSentenceTitle => 'AI 助教';
+
+  @override
+  String get chatInputPlaceholder => '有问题尽管问…';
+
+  @override
+  String get chatSend => '发送';
+
+  @override
+  String get chatStop => '停止';
+
+  @override
+  String get chatClear => '清空对话';
+
+  @override
+  String get chatNewChat => '新建会话';
+
+  @override
+  String get chatRegenerate => '重新生成';
+
+  @override
+  String get chatEdit => '编辑';
+
+  @override
+  String get chatEditTitle => '编辑消息';
+
+  @override
+  String get chatCopy => '复制';
+
+  @override
+  String get chatCopied => '已复制';
+
+  @override
+  String chatContextLabel(String summary) {
+    return '正在讨论：$summary';
+  }
+
+  @override
+  String get chatEmptyGreeting => '关于这句话，有什么想问的？';
+
+  @override
+  String get chatErrorNetwork => '网络不可用，点击重试。';
+
+  @override
+  String get chatErrorGenerate => '生成失败，点击重试。';
+
+  @override
+  String get chatQuotaTitle => '免费额度已用完';
+
+  @override
+  String get chatUpgrade => '升级';
+
+  @override
+  String get chatSignInTitle => '需要登录';
+
+  @override
+  String get chatSignInMessage => '登录后即可使用 AI 助手。';
+
+  @override
+  String get chatScrollToBottom => '回到底部';
+
+  @override
+  String get chatThinking => '思考中…';
+
+  @override
+  String get chatFollowUp => '问 AI';
+
+  @override
+  String get chatFollowUpExplain => '详细解释';
+
+  @override
+  String get chatFollowUpTranslate => '翻译';
+
+  @override
+  String get chatFollowUpExample => '举个例子';
+
+  @override
+  String get chatFollowUpInstruction => '请仅根据下方引用的内容回答问题。';
+
+  @override
+  String get chatQuoteRemove => '移除引用';
 }

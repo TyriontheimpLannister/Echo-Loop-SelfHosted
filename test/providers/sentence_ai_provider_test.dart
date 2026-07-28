@@ -155,6 +155,119 @@ void main() {
       );
     });
 
+    test('后端 402 → 触发 onBackendQuotaRejected（E7 权益分歧收敛信号）', () async {
+      final rejected = <PremiumFeature>[];
+      notifier = SentenceAiNotifier(
+        cacheDao: mockDao,
+        apiClient: mockApi,
+        onBackendQuotaRejected: rejected.add,
+      );
+      when(
+        () => mockDao.getByHash(any(), l2TranslationType),
+      ).thenAnswer((_) async => null);
+      stubTranslateStream(
+        text,
+        () => _errorTranslation(
+          DioException(
+            requestOptions: RequestOptions(path: '/api/v1/stream/translate'),
+            response: Response(
+              requestOptions: RequestOptions(path: '/api/v1/stream/translate'),
+              statusCode: 402,
+            ),
+          ),
+        ),
+      );
+
+      await expectLater(
+        notifier
+            .getTranslationStream(
+              text,
+              targetLanguage: lang,
+              accessToken: 'token',
+            )
+            .toList(),
+        throwsA(isA<AiFeatureQuotaExceededException>()),
+      );
+      expect(rejected, [PremiumFeature.aiTranslation]);
+    });
+
+    test('后端 401（登录态失效）→ 抛 AiFeatureAuthRequiredException，不重试', () async {
+      when(
+        () => mockDao.getByHash(any(), l2TranslationType),
+      ).thenAnswer((_) async => null);
+      var apiCalls = 0;
+      when(
+        () => mockApi.translateStream(
+          text,
+          previousText: any(named: 'previousText'),
+          nextText: any(named: 'nextText'),
+          targetLanguage: lang,
+          accessToken: 'token',
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer((_) {
+        apiCalls++;
+        return _errorTranslation(
+          DioException(
+            requestOptions: RequestOptions(path: '/api/v1/stream/translate'),
+            response: Response(
+              requestOptions: RequestOptions(path: '/api/v1/stream/translate'),
+              statusCode: 401,
+            ),
+          ),
+        );
+      });
+
+      await expectLater(
+        notifier
+            .getTranslationStream(
+              text,
+              targetLanguage: lang,
+              accessToken: 'token',
+            )
+            .toList(),
+        throwsA(isA<AiFeatureAuthRequiredException>()),
+      );
+      // 401 属确定性拒绝，不应走「失败重试一次」路径。
+      expect(apiCalls, 1);
+    });
+
+    test('非 402 错误不触发 onBackendQuotaRejected', () async {
+      final rejected = <PremiumFeature>[];
+      notifier = SentenceAiNotifier(
+        cacheDao: mockDao,
+        apiClient: mockApi,
+        onBackendQuotaRejected: rejected.add,
+      );
+      when(
+        () => mockDao.getByHash(any(), l2TranslationType),
+      ).thenAnswer((_) async => null);
+      stubTranslateStream(
+        text,
+        () => _errorTranslation(
+          DioException(
+            requestOptions: RequestOptions(path: '/api/v1/stream/translate'),
+            response: Response(
+              requestOptions: RequestOptions(path: '/api/v1/stream/translate'),
+              statusCode: 500,
+            ),
+          ),
+        ),
+      );
+
+      await expectLater(
+        notifier
+            .getTranslationStream(
+              text,
+              targetLanguage: lang,
+              accessToken: 'token',
+            )
+            .toList(),
+        throwsA(isA<DioException>()),
+      );
+      expect(rejected, isEmpty);
+    });
+
     test('非 402 的 Dio 错误原样抛出（不误判为额度超限）', () async {
       when(
         () => mockDao.getByHash(any(), l2TranslationType),

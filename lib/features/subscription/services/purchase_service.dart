@@ -11,7 +11,12 @@ import '../models/subscription_plan.dart';
 
 /// 购买流程异常。
 class PurchaseException implements Exception {
-  PurchaseException(this.message, {this.cancelled = false});
+  PurchaseException(
+    this.message, {
+    this.cancelled = false,
+    this.ownershipConflict = false,
+    this.receiptInUse = false,
+  });
 
   /// 错误描述。
   final String message;
@@ -19,8 +24,35 @@ class PurchaseException implements Exception {
   /// 是否为用户主动取消（取消不应视为错误弹窗，仅回到 Paywall）。
   final bool cancelled;
 
+  /// 是否为恢复购买时发现订阅归属于另一个 App User ID。
+  final bool ownershipConflict;
+
+  /// 收据已被其他 RevenueCat 订阅者占用（receiptAlreadyInUseError）。
+  /// 本账号可能已被后端判为会员（如 Paddle 订阅），调用方应转回源确认，
+  /// 而不是当作「购买失败」。
+  final bool receiptInUse;
+
   @override
-  String toString() => 'PurchaseException($message, cancelled: $cancelled)';
+  String toString() =>
+      'PurchaseException($message, cancelled: $cancelled, '
+      'ownershipConflict: $ownershipConflict, receiptInUse: $receiptInUse)';
+}
+
+/// 恢复购买结果。
+///
+/// [originalAppUserId] 来自 RevenueCat CustomerInfo，用于恢复购买后校验订阅是否
+/// 归属于当前 Echo Loop 账号；非 RevenueCat 渠道无法提供时为 null。
+class RestorePurchaseResult {
+  const RestorePurchaseResult({
+    required this.entitlement,
+    this.originalAppUserId,
+  });
+
+  /// 恢复后平台返回的权益快照。
+  final Entitlement entitlement;
+
+  /// RevenueCat 记录的原始 App User ID。
+  final String? originalAppUserId;
 }
 
 /// IAP 购买服务抽象。
@@ -50,7 +82,7 @@ abstract class PurchaseService {
   Future<Entitlement> purchase(String planId);
 
   /// 恢复购买。返回恢复后的权益快照（无可恢复购买返回 [Entitlement.free]）。
-  Future<Entitlement> restore();
+  Future<RestorePurchaseResult> restore();
 
   /// 将购买服务绑定到指定用户（如 RevenueCat `logIn`）。匿名为 null。
   Future<void> identify(String? userId);
@@ -106,7 +138,8 @@ class StubPurchaseService implements PurchaseService {
   }
 
   @override
-  Future<Entitlement> restore() async => Entitlement.free;
+  Future<RestorePurchaseResult> restore() async =>
+      const RestorePurchaseResult(entitlement: Entitlement.free);
 
   @override
   Future<void> identify(String? userId) async {}

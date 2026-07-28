@@ -1,12 +1,50 @@
-// audio_content_check 纯逻辑单元测试
-//
-// 只测纯函数 isWaveformSilent；evaluateAudioContent 依赖真机解码（just_audio /
-// just_waveform），属平台相关，留集成/手动验证。
-
 import 'package:flutter_test/flutter_test.dart';
+import 'package:echo_loop/models/audio_item.dart';
 import 'package:echo_loop/utils/audio_content_check.dart';
 
 void main() {
+  group('evaluateAudioContent', () {
+    test('FFmpeg 短解码失败时返回 damaged', () async {
+      final status = await evaluateAudioContent(
+        'audios/broken.mp3',
+        decodeProbe: (_) async => false,
+        silenceProbe: (_) async => false,
+      );
+
+      expect(status, AudioContentStatus.damaged);
+    });
+
+    test('短解码成功且波形静音时返回 silent', () async {
+      final status = await evaluateAudioContent(
+        'audios/silent.mp3',
+        decodeProbe: (_) async => true,
+        silenceProbe: (_) async => true,
+      );
+
+      expect(status, AudioContentStatus.silent);
+    });
+
+    test('短解码成功且波形非静音时返回 ok', () async {
+      final status = await evaluateAudioContent(
+        'audios/normal.mp3',
+        decodeProbe: (_) async => true,
+        silenceProbe: (_) async => false,
+      );
+
+      expect(status, AudioContentStatus.ok);
+    });
+
+    test('短解码成功但波形探测失败时返回 ok', () async {
+      final status = await evaluateAudioContent(
+        'audios/waveform-error.mp3',
+        decodeProbe: (_) async => true,
+        silenceProbe: (_) async => throw StateError('waveform failed'),
+      );
+
+      expect(status, AudioContentStatus.ok);
+    });
+  });
+
   group('isWaveformSilent', () {
     test('全零样本判为静音', () {
       final samples = List<int>.filled(1000, 0);

@@ -20,7 +20,10 @@ class _PodcastTestCollectionList extends TestCollectionList {
   _PodcastTestCollectionList(super.initialState);
 
   @override
-  Future<void> updatePodcastCollection(Collection updated) async {
+  Future<void> updatePodcastCollection(
+    Collection updated, {
+    bool touchUpdatedAt = true,
+  }) async {
     final collections = [...state.rawCollections];
     final index = collections.indexWhere((c) => c.id == updated.id);
     if (index == -1) return;
@@ -96,22 +99,27 @@ void main() {
     // 标题由 AppBar 承载，header 不再重复展示；作者也不在 header
     expect(find.text('Learning Podcast'), findsWidgets);
     expect(find.text('Echo Studio'), findsNothing);
-    // header 仅保留封面 + 简介预览 + 更多
-    expect(find.text(longDescription), findsOneWidget);
+    // header 仅保留封面 + 3 行简介预览 + 内联更多，不完整铺开长简介
+    expect(find.text(longDescription), findsNothing);
+    expect(
+      find.byKey(const ValueKey('podcast-feed-summary-inline-more')),
+      findsOneWidget,
+    );
     // 头部保持紧凑，不展示上次刷新时间
     expect(find.text('Last refreshed: 2026-06-12 08:30'), findsNothing);
     expect(find.byIcon(Icons.podcasts_rounded), findsOneWidget);
     expect(find.byIcon(Icons.refresh), findsNothing);
     expect(find.byIcon(Icons.info_outline), findsNothing);
-    expect(find.text('More'), findsOneWidget);
-    await tester.tap(find.text('More'));
+    await tester.tap(
+      find.byKey(const ValueKey('podcast-feed-summary-inline-more')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Details'), findsOneWidget);
     // 作者移入详情弹窗
     expect(find.text('Echo Studio'), findsOneWidget);
-    // 详情弹窗展示上次刷新时间
-    expect(find.text('Last refreshed: 2026-06-12 08:30'), findsOneWidget);
+    // 详情弹窗只展示 RSS/来源链接，不混入刷新状态。
+    expect(find.text('Last refreshed: 2026-06-12 08:30'), findsNothing);
     await tester.scrollUntilVisible(
       find.text('RSS URL'),
       120,
@@ -183,7 +191,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('More'));
+    await tester.tap(
+      find.byKey(const ValueKey('podcast-feed-summary-inline-more')),
+    );
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.text('RSS URL'),
@@ -327,7 +337,9 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.text('More'));
+    await tester.tap(
+      find.byKey(const ValueKey('podcast-feed-summary-inline-more')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Last refreshed: 2026-06-15 11:22'), findsNothing);

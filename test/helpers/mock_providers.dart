@@ -305,6 +305,10 @@ class _TestDictionary extends Dictionary {
 /// 返回学习设置 Provider 系列的 override 列表
 List<Override> learningSettingsOverrides({
   bool autoSkipRetell = false,
+  bool autoShowAiExplanation = true,
+  bool autoShowAiAnalysis = true,
+  bool autoShowAiTranslation = true,
+  bool autoShowAiSenseGroups = false,
   bool autoPlayRetellRecordingAfterCompletion = false,
   bool listenAndRepeatRatingEnabled = true,
   bool retellRatingEnabled = true,
@@ -316,6 +320,10 @@ List<Override> learningSettingsOverrides({
     initialLearningSettingsProvider.overrideWithValue(
       LearningSettings(
         autoSkipRetell: autoSkipRetell,
+        autoShowAiExplanation: autoShowAiExplanation,
+        autoShowAiAnalysis: autoShowAiAnalysis,
+        autoShowAiTranslation: autoShowAiTranslation,
+        autoShowAiSenseGroups: autoShowAiSenseGroups,
         autoPlayRetellRecordingAfterCompletion:
             autoPlayRetellRecordingAfterCompletion,
         listenAndRepeatRatingEnabled: listenAndRepeatRatingEnabled,

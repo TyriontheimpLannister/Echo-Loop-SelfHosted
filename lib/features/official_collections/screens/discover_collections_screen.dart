@@ -20,7 +20,8 @@ import '../providers/official_enrollment_provider.dart';
 import '../widgets/official_collection_card.dart';
 
 const _logTag = 'DiscoverScreen';
-const _podcastEntryImageUrl = 'https://i.postimg.cc/tRPzG4zX/podcast.jpg';
+const _podcastEntryImageUrl =
+    'https://i.postimg.cc/t4fTVSWw/Apple-Podcasts.png';
 
 /// 发现官方合集页。
 ///
@@ -136,8 +137,7 @@ class _DiscoverCollectionsScreenState
       itemBuilder: (context, index) {
         if (hasPodcastEntry && index == 0) {
           return _PodcastDiscoverEntry(
-            count: podcasts.length,
-            onTap: () => context.push(AppRoutes.discoverPodcasts),
+            onTap: () => context.push(AppRoutes.podcastSubscribe),
           );
         }
         final item = items[index - (hasPodcastEntry ? 1 : 0)];
@@ -205,52 +205,32 @@ class _DiscoverCollectionsScreenState
 }
 
 class _PodcastDiscoverEntry extends StatelessWidget {
-  final int count;
   final VoidCallback onTap;
 
-  const _PodcastDiscoverEntry({required this.count, required this.onTap});
+  const _PodcastDiscoverEntry({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
     return Card(
-      margin: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           child: Row(
             children: [
               const _PodcastEntryImage(),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.discoverPodcastEntryTitle,
-                      style: theme.textTheme.titleMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      l10n.discoverPodcastEntrySubtitle(count),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                child: Text(
+                  l10n.discoverPodcastEntryTitle,
+                  style: theme.textTheme.titleMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_right,
-                color: theme.colorScheme.onSurfaceVariant,
               ),
             ],
           ),

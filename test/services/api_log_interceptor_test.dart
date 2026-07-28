@@ -186,5 +186,52 @@ void main() {
       expect(log, isNot(contains('signed.example')));
       expect(log, isNot(contains('another-user-id')));
     });
+
+    test('URI query、请求体和响应体中的 OAuth 敏感字段统一脱敏', () {
+      final options = RequestOptions(
+        path: '/api/v1/netdisk/baidu/oauth/session/status',
+        method: 'POST',
+        baseUrl: 'https://api.test',
+        queryParameters: {
+          'code': 'oauth-code',
+          'state': 'oauth-state',
+          'dlink': 'https://d.pcs.baidu.com/file?secret=1',
+          'safe': 'ok',
+        },
+        data: {
+          'sessionId': 'sid-secret',
+          'pollToken': 'poll-secret',
+          'clientSecret': 'client-secret',
+        },
+      );
+      final response = Response(
+        requestOptions: options,
+        statusCode: 200,
+        data: {
+          'credential': {
+            'accessToken': 'access-secret',
+            'refreshToken': 'refresh-secret',
+          },
+        },
+      );
+
+      final log = capture(() {
+        interceptor.onRequest(options, RequestInterceptorHandler());
+        interceptor.onResponse(response, ResponseInterceptorHandler());
+      });
+
+      expect(log, contains('safe=ok'));
+      expect(log, contains('code=***'));
+      expect(log, contains('state=***'));
+      expect(log, contains('dlink=***'));
+      expect(log, isNot(contains('oauth-code')));
+      expect(log, isNot(contains('oauth-state')));
+      expect(log, isNot(contains('sid-secret')));
+      expect(log, isNot(contains('poll-secret')));
+      expect(log, isNot(contains('client-secret')));
+      expect(log, isNot(contains('access-secret')));
+      expect(log, isNot(contains('refresh-secret')));
+      expect(log, isNot(contains('d.pcs.baidu.com')));
+    });
   });
 }

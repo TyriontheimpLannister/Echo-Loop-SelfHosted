@@ -73,7 +73,7 @@ class SubscriptionPlan {
   /// 免费试用天数（[hasFreeTrial] 为 false 时为 0）。
   final int trialDays;
 
-  /// 平台配置的首期促销（免费试用 / 首期折扣），为空表示当前用户不应看到促销价。
+  /// 平台配置的 intro offer（免费试用 / 折扣），为空表示当前用户不应看到优惠价。
   final SubscriptionIntroOffer? introOffer;
 
   const SubscriptionPlan({
@@ -110,9 +110,9 @@ class SubscriptionPlan {
   );
 }
 
-/// 单个套餐的首期促销展示信息。
+/// 单个套餐的 intro offer 展示信息。
 class SubscriptionIntroOffer {
-  /// 首期促销价（本地化价格字符串）；免费试用时通常为 `$0.00`。
+  /// Intro offer 优惠价（本地化价格字符串）；免费试用时通常为 `$0.00`。
   final String priceString;
 
   /// 促销周期单位。

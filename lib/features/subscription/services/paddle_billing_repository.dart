@@ -1,0 +1,249 @@
+/// Paddle direct 渠道的后端 API client。
+library;
+
+import 'dart:ui' as ui;
+
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
+
+import '../../../config/api_config.dart';
+import '../../../providers/package_info_provider.dart';
+import '../../../services/backend_dio.dart';
+import '../../../services/app_logger.dart';
+import '../models/subscription_plan.dart';
+import '../utils/plan_pricing.dart';
+
+const _uuid = Uuid();
+
+/// 一次 Paddle checkout 的服务端结果。
+class PaddleCheckoutSession {
+  const PaddleCheckoutSession({
+    required this.attemptId,
+    required this.checkoutUrl,
+  });
+
+  final String attemptId;
+  final Uri checkoutUrl;
+}
+
+/// Paddle 后端 API 访问层；不负责登录状态或 UI 编排。
+class PaddleBillingRepository {
+  PaddleBillingRepository({required String baseUrl, String? appVersion})
+    : _dio = createBackendDio(
+        baseUrl: baseUrl,
+        appVersion: appVersion,
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 20),
+        apiLogTag: 'PADDLE',
+      );
+
+  @visibleForTesting
+  PaddleBillingRepository.withDio(this._dio);
+
+  final Dio _dio;
+
+  /// 从服务端读取 Paddle 套餐，地区化价格由后端按请求来源判定。
+  Future<List<SubscriptionPlan>> fetchPlans() async {
+    AppLogger.log('Subscription', 'Paddle plans 请求开始');
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/api/paddle/plans',
+      );
+      final data = response.data;
+      final rawPlans = data?['plans'];
+      if (rawPlans is! List) {
+        AppLogger.log(
+          'Subscription',
+          'Paddle plans 响应无效: status=${response.statusCode} '
+              'keys=${data?.keys.toList() ?? const []}',
+        );
+        throw StateError('Paddle plans response is invalid');
+      }
+      final plans = rawPlans
+          .whereType<Map>()
+          .map((raw) => _planFrom(Map<String, dynamic>.from(raw)))
+          .toList(growable: false);
+      AppLogger.log(
+        'Subscription',
+        'Paddle plans 请求成功: status=${response.statusCode} '
+            'count=${plans.length} ids=${plans.map((p) => p.planId).toList()}',
+      );
+      return plans;
+    } catch (error) {
+      AppLogger.log('Subscription', 'Paddle plans 请求失败: error=$error');
+      rethrow;
+    }
+  }
+
+  /// 创建服务端 Paddle transaction；客户端不能提交 discount 或 redirect URL。
+  Future<PaddleCheckoutSession> createCheckout({
+    required String accessToken,
+    required String planId,
+  }) async {
+    final locale = _localeTag();
+    final idempotencyKey = _uuid.v4();
+    AppLogger.log(
+      'Subscription',
+      'Paddle checkout 请求开始: planId=$planId locale=$locale '
+          'idempotencyKey=$idempotencyKey',
+    );
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/paddle/checkout',
+        data: {'planId': planId, 'locale': locale},
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $accessToken',
+            'Idempotency-Key': idempotencyKey,
+          },
+        ),
+      );
+      final data = response.data;
+      final attemptId = data?['attemptId'];
+      final checkoutUrl = data?['checkoutUrl'];
+      if (attemptId is! String || checkoutUrl is! String) {
+        AppLogger.log(
+          'Subscription',
+          'Paddle checkout 响应无效: status=${response.statusCode} '
+              'keys=${data?.keys.toList() ?? const []}',
+        );
+        throw StateError('Paddle checkout response is invalid');
+      }
+      final uri = Uri.tryParse(checkoutUrl);
+      if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+        AppLogger.log(
+          'Subscription',
+          'Paddle checkout URL 无效: attemptId=$attemptId url=$checkoutUrl',
+        );
+        throw StateError('Paddle checkout URL is invalid');
+      }
+      AppLogger.log(
+        'Subscription',
+        'Paddle checkout 请求成功: status=${response.statusCode} '
+            'attemptId=$attemptId host=${uri.host} path=${uri.path}',
+      );
+      return PaddleCheckoutSession(attemptId: attemptId, checkoutUrl: uri);
+    } catch (error) {
+      AppLogger.log(
+        'Subscription',
+        'Paddle checkout 请求失败: planId=$planId error=$error',
+      );
+      rethrow;
+    }
+  }
+
+  /// 创建短期 Customer Portal session，返回服务端生成的 overview URL。
+  Future<Uri> createPortal({required String accessToken}) async {
+    AppLogger.log('Subscription', 'Paddle Portal 请求开始');
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/paddle/portal',
+        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      );
+      final data = response.data;
+      final raw = data?['portalUrl'];
+      if (raw is! String) {
+        AppLogger.log(
+          'Subscription',
+          'Paddle Portal 响应无效: status=${response.statusCode} '
+              'keys=${data?.keys.toList() ?? const []}',
+        );
+        throw StateError('Paddle portal response is invalid');
+      }
+      final uri = Uri.tryParse(raw);
+      if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+        AppLogger.log('Subscription', 'Paddle Portal URL 无效: url=$raw');
+        throw StateError('Paddle portal URL is invalid');
+      }
+      AppLogger.log(
+        'Subscription',
+        'Paddle Portal 请求成功: status=${response.statusCode} '
+            'host=${uri.host} path=${uri.path}',
+      );
+      return uri;
+    } catch (error) {
+      AppLogger.log('Subscription', 'Paddle Portal 请求失败: error=$error');
+      rethrow;
+    }
+  }
+
+  SubscriptionPlan _planFrom(Map<String, dynamic> json) {
+    final planId = json['planId'];
+    final priceString = json['priceString'];
+    if (planId is! String || priceString is! String) {
+      throw StateError('Paddle plan fields are invalid');
+    }
+    final period = switch (planId) {
+      'plus_monthly' => SubscriptionPeriod.monthly,
+      'plus_yearly' => SubscriptionPeriod.yearly,
+      _ => throw StateError('Unsupported Paddle plan id: $planId'),
+    };
+    final offer = json['introOffer'];
+    return SubscriptionPlan(
+      planId: planId,
+      title: _titleForPeriod(period),
+      priceString: priceString,
+      period: period,
+      hasFreeTrial: json['hasFreeTrial'] == true,
+      trialDays: _intValue(json['trialDays'], fallback: 0),
+      introOffer: offer is Map
+          ? _introOfferFrom(Map<String, dynamic>.from(offer))
+          : null,
+    );
+  }
+
+  SubscriptionIntroOffer _introOfferFrom(Map<String, dynamic> json) {
+    final discountType = json['discountType'];
+    final discountPercent = json['discountPercent'];
+    final renewalPriceString = json['renewalPriceString'];
+    if (discountType != 'percentage' ||
+        discountPercent is! num ||
+        renewalPriceString is! String) {
+      throw StateError('Paddle intro offer fields are invalid');
+    }
+    final priceString = discountedPriceString(
+      renewalPriceString,
+      discountPercent,
+    );
+    if (priceString == null) {
+      throw StateError('Paddle intro offer discount is invalid');
+    }
+    final period = switch (json['period']) {
+      'day' => SubscriptionOfferPeriod.day,
+      'week' => SubscriptionOfferPeriod.week,
+      'month' => SubscriptionOfferPeriod.month,
+      'year' => SubscriptionOfferPeriod.year,
+      _ => SubscriptionOfferPeriod.unknown,
+    };
+    return SubscriptionIntroOffer(
+      priceString: priceString,
+      period: period,
+      periodNumberOfUnits: _intValue(json['periodNumberOfUnits'], fallback: 1),
+      cycles: _intValue(json['cycles'], fallback: 1),
+      isFreeTrial: json['isFreeTrial'] == true,
+      renewalPriceString: renewalPriceString,
+    );
+  }
+
+  String _titleForPeriod(SubscriptionPeriod period) => switch (period) {
+    SubscriptionPeriod.monthly => 'Monthly',
+    SubscriptionPeriod.yearly => 'Yearly',
+    SubscriptionPeriod.lifetime => 'Lifetime',
+  };
+
+  String _localeTag() => ui.PlatformDispatcher.instance.locale.toLanguageTag();
+
+  int _intValue(Object? value, {required int fallback}) =>
+      value is num ? value.toInt() : fallback;
+}
+
+final paddleBillingRepositoryProvider = Provider<PaddleBillingRepository>((
+  ref,
+) {
+  return PaddleBillingRepository(
+    baseUrl: apiBaseUrl,
+    appVersion: readAppVersion(ref),
+  );
+});

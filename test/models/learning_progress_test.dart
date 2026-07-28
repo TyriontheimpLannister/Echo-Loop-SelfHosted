@@ -626,6 +626,86 @@ void main() {
       expect(progress.isReviewLockedAt(after), false);
     });
 
+    test('手动解锁 — nextReviewAt 返回解锁时刻，锁定判定立即解除', () {
+      final completedAt = DateTime(2026, 2, 21, 10, 0);
+      final unlockAt = DateTime(2026, 2, 21, 12, 0); // 原定 16:00 解锁，提前到 12:00
+      final progress = LearningProgress(
+        audioItemId: 'audio-1',
+        currentStage: LearningStage.review0,
+        currentSubStage: SubStageType.blindListen,
+        lastStageCompletedAt: completedAt,
+        manualUnlockAt: unlockAt,
+        updatedAt: unlockAt,
+      );
+
+      expect(progress.nextReviewAt, unlockAt);
+      expect(progress.isReviewReadyAt(unlockAt), true);
+      expect(progress.isReviewLockedAt(unlockAt), false);
+    });
+
+    test('手动解锁 — now 早于 manualUnlockAt（时光机偏差）仍视为已解锁', () {
+      final completedAt = DateTime(2026, 2, 21, 10, 0);
+      final unlockAt = DateTime(2026, 2, 21, 12, 0);
+      final progress = LearningProgress(
+        audioItemId: 'audio-1',
+        currentStage: LearningStage.review1,
+        currentSubStage: SubStageType.blindListen,
+        lastStageCompletedAt: completedAt,
+        manualUnlockAt: unlockAt,
+        updatedAt: unlockAt,
+      );
+
+      // 时光机可能让业务层的 now 早于真实持久化的解锁时刻，
+      // isReviewReadyAt 对非空 manualUnlockAt 无条件短路。
+      final debugNow = DateTime(2026, 2, 21, 11, 0);
+      expect(progress.isReviewReadyAt(debugNow), true);
+      expect(progress.isReviewLockedAt(debugNow), false);
+    });
+
+    test('手动解锁 — 逾期窗口从解锁时刻起算', () {
+      final completedAt = DateTime(2026, 2, 21, 10, 0);
+      final unlockAt = DateTime(2026, 2, 21, 12, 0);
+      final progress = LearningProgress(
+        audioItemId: 'audio-1',
+        currentStage: LearningStage.review0,
+        currentSubStage: SubStageType.reviewDifficultPractice,
+        lastStageCompletedAt: completedAt,
+        manualUnlockAt: unlockAt,
+        updatedAt: unlockAt,
+      );
+
+      // review0 窗口 6h：解锁后窗口 = 解锁时刻 + 6h
+      expect(
+        progress.reviewWindowEndAt,
+        unlockAt.add(const Duration(hours: 6)),
+      );
+    });
+
+    test('copyWith — manualUnlockAt 默认保留，clearManualUnlockAt 清空', () {
+      final unlockAt = DateTime(2026, 2, 21, 12, 0);
+      final progress = LearningProgress(
+        audioItemId: 'audio-1',
+        currentStage: LearningStage.review0,
+        currentSubStage: SubStageType.blindListen,
+        lastStageCompletedAt: DateTime(2026, 2, 21, 10, 0),
+        manualUnlockAt: unlockAt,
+        updatedAt: unlockAt,
+      );
+
+      // 默认保留
+      final kept = progress.copyWith(totalStudyDurationMs: 1000);
+      expect(kept.manualUnlockAt, unlockAt);
+
+      // 显式清空（跨 stage 推进时使用）
+      final cleared = progress.copyWith(clearManualUnlockAt: true);
+      expect(cleared.manualUnlockAt, isNull);
+      // 清空后恢复原时间锁
+      expect(
+        cleared.nextReviewAt,
+        DateTime(2026, 2, 21, 10, 0).add(const Duration(hours: 6)),
+      );
+    });
+
     test('首次学习阶段 isReviewLockedAt=false', () {
       final progress = LearningProgress(
         audioItemId: 'audio-1',

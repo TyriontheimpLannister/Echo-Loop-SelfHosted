@@ -31,6 +31,7 @@ class AudioRegistrationService {
     if (originalSha != null) {
       final existingResult = await registerExistingAudioByOriginalSha256(
         originalAudioSha256: originalSha,
+        attemptedName: input.name,
         audioLibraryState: audioLibraryState,
         collectionList: collectionList,
         collectionState: collectionState,
@@ -86,12 +87,12 @@ class AudioRegistrationService {
     if (existingItem == null) return null;
 
     if (collectionId == null) {
-      return AudioRegistrationDuplicate(name);
+      return AudioRegistrationDuplicate(existingName: existingItem.name);
     }
 
     final audioIds = collectionState?.getAudioIds(collectionId) ?? const [];
     if (audioIds.contains(existingItem.id)) {
-      return AudioRegistrationDuplicate(name);
+      return AudioRegistrationDuplicate(existingName: existingItem.name);
     }
 
     await collectionList?.addAudioToCollection(collectionId, existingItem.id);
@@ -113,6 +114,7 @@ class AudioRegistrationService {
   Future<AudioRegistrationResult?> registerExistingAudioByOriginalSha256({
     required String originalAudioSha256,
     required AudioLibraryState audioLibraryState,
+    String? attemptedName,
     CollectionList? collectionList,
     CollectionState? collectionState,
     String? collectionId,
@@ -123,12 +125,18 @@ class AudioRegistrationService {
     );
     if (existingItem == null) return null;
     if (collectionId == null) {
-      return AudioRegistrationDuplicate(existingItem.name);
+      return AudioRegistrationDuplicate(
+        existingName: existingItem.name,
+        attemptedName: attemptedName,
+      );
     }
 
     final audioIds = collectionState?.getAudioIds(collectionId) ?? const [];
     if (audioIds.contains(existingItem.id)) {
-      return AudioRegistrationDuplicate(existingItem.name);
+      return AudioRegistrationDuplicate(
+        existingName: existingItem.name,
+        attemptedName: attemptedName,
+      );
     }
 
     await collectionList?.addAudioToCollection(collectionId, existingItem.id);
@@ -182,7 +190,17 @@ class AudioRegistrationAdded extends AudioRegistrationResult {
 }
 
 class AudioRegistrationDuplicate extends AudioRegistrationResult {
-  const AudioRegistrationDuplicate(this.name);
+  const AudioRegistrationDuplicate({
+    required this.existingName,
+    String? attemptedName,
+  }) : attemptedName = attemptedName ?? existingName;
 
-  final String name;
+  /// 库中已存在的同内容（或同名）条目名称。
+  final String existingName;
+
+  /// 本次尝试导入的名称（可能与 [existingName] 不同，如内容相同但文件名不同）。
+  final String attemptedName;
+
+  /// 兼容旧用法：默认取已存在条目名称。
+  String get name => existingName;
 }

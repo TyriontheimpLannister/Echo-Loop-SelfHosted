@@ -144,6 +144,7 @@ class CollectionList extends _$CollectionList {
               id: row.id,
               name: row.name,
               createdDate: row.createdDate,
+              updatedAt: row.updatedAt,
               isPinned: row.isPinned,
               source: CollectionSource.fromString(row.source),
               remoteId: row.remoteId,
@@ -228,11 +229,27 @@ class CollectionList extends _$CollectionList {
     await dao.hardDelete(id);
   }
 
+  /// 删除合集并彻底删除其中的音频（DB 记录 + 文件 + 关联数据）。
+  ///
+  /// 用于「我的合集」列表删除时用户勾选「同时删除音频文件」的分支。音频可能被多个
+  /// 合集共享，故通过 [AudioLibrary.removeAudioItems] 逐条按引用检查删文件，避免误删
+  /// 仍被其它条目使用的资源；最后调用 [deleteCollection] 删合集行。
+  Future<void> deleteCollectionWithAudios(String id) async {
+    final audioIds = state.getAudioIds(id).toSet();
+    if (audioIds.isNotEmpty) {
+      await ref.read(audioLibraryProvider.notifier).removeAudioItems(audioIds);
+    }
+    await deleteCollection(id);
+  }
+
   Future<void> renameCollection(String id, String newName) async {
     final collections = [...state.rawCollections];
     final index = collections.indexWhere((c) => c.id == id);
     if (index != -1) {
-      collections[index] = collections[index].copyWith(name: newName);
+      collections[index] = collections[index].copyWith(
+        name: newName,
+        updatedAt: DateTime.now(),
+      );
       state = state.copyWith(rawCollections: collections);
       await _upsertCollection(collections[index]);
     }
@@ -278,6 +295,8 @@ class CollectionList extends _$CollectionList {
     }
     if (changed) {
       newMap[collectionId] = ids;
+      await _touchCollectionUpdatedAt(collectionId, audioIdsMap: newMap);
+    } else {
       state = state.copyWith(audioIdsMap: newMap);
     }
   }
@@ -294,7 +313,27 @@ class CollectionList extends _$CollectionList {
     final ids = List<String>.from(newMap[collectionId] ?? []);
     ids.remove(audioId);
     newMap[collectionId] = ids;
-    state = state.copyWith(audioIdsMap: newMap);
+    await _touchCollectionUpdatedAt(collectionId, audioIdsMap: newMap);
+  }
+
+  /// 从指定合集中批量移除多个音频引用。
+  ///
+  /// 用于合集详情页的多选删除「仅从合集移除」分支。DAO 单条 SQL 删除 junction，
+  /// 内存 `audioIdsMap` 只更新一次，避免逐条 [removeAudioFromCollection] 触发多次
+  /// state 重建。
+  Future<void> removeAudiosFromCollection(
+    String collectionId,
+    Set<String> audioIds,
+  ) async {
+    if (audioIds.isEmpty) return;
+    final dao = ref.read(collectionDaoProvider);
+    await dao.removeAudios(collectionId, audioIds);
+
+    final newMap = Map<String, List<String>>.from(state.audioIdsMap);
+    final ids = List<String>.from(newMap[collectionId] ?? [])
+      ..removeWhere(audioIds.contains);
+    newMap[collectionId] = ids;
+    await _touchCollectionUpdatedAt(collectionId, audioIdsMap: newMap);
   }
 
   /// 从所有合集中移除指定音频的引用（当音频从音频库删除时调用）
@@ -383,9 +422,34 @@ class CollectionList extends _$CollectionList {
         podcastMetaJson: Value(collection.podcastMetaJson),
         podcastLastRefreshedAt: Value(collection.podcastLastRefreshedAt),
         podcastLastRefreshError: Value(collection.podcastLastRefreshError),
-        updatedAt: Value(DateTime.now()),
+        updatedAt: Value(collection.updatedAt),
       ),
     );
+  }
+
+  /// 记录合集发生用户可感知的内容更新，并同步可选的音频映射缓存。
+  ///
+  /// 置顶、排序这类列表偏好不调用这里；添加/移除音频、重命名和成功刷新元信息会刷新
+  /// [Collection.updatedAt]，供资源库列表显示“更新于 X分钟前”。
+  Future<void> _touchCollectionUpdatedAt(
+    String collectionId, {
+    Map<String, List<String>>? audioIdsMap,
+  }) async {
+    final collections = [...state.rawCollections];
+    final index = collections.indexWhere((c) => c.id == collectionId);
+    if (index == -1) {
+      if (audioIdsMap != null) {
+        state = state.copyWith(audioIdsMap: audioIdsMap);
+      }
+      return;
+    }
+    final updated = collections[index].copyWith(updatedAt: DateTime.now());
+    collections[index] = updated;
+    state = state.copyWith(
+      rawCollections: collections,
+      audioIdsMap: audioIdsMap,
+    );
+    await _upsertCollection(updated);
   }
 
   // ── Podcast 专用方法 ─────────────────────────────────────────────────
@@ -400,12 +464,21 @@ class CollectionList extends _$CollectionList {
   }
 
   /// 更新 podcast 合集元信息（刷新时间、coverUrl、metaJson）。
-  Future<void> updatePodcastCollection(Collection updated) async {
+  ///
+  /// [touchUpdatedAt] 仅用于成功同步或元信息变化；刷新失败只记录错误，不改变列表里的
+  /// “更新于”时间，避免把失败尝试伪装成内容更新。
+  Future<void> updatePodcastCollection(
+    Collection updated, {
+    bool touchUpdatedAt = true,
+  }) async {
     final idx = state.rawCollections.indexWhere((c) => c.id == updated.id);
     if (idx == -1) return;
-    final list = [...state.rawCollections]..[idx] = updated;
+    final list = [...state.rawCollections]
+      ..[idx] = touchUpdatedAt
+          ? updated.copyWith(updatedAt: DateTime.now())
+          : updated;
     state = state.copyWith(rawCollections: list);
-    await _upsertCollection(updated);
+    await _upsertCollection(list[idx]);
   }
 
   /// 退订 podcast 合集：彻底清理合集**独占**的所有单集（DB 记录 + 已下载音频/字幕

@@ -17,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../helpers/mock_providers.dart';
@@ -419,6 +420,32 @@ void main() {
     expect(find.text('Source Page'), findsNothing);
     expect(find.text('Authentication is not configured yet.'), findsOneWidget);
     expect(find.text('Supabase auth is not configured.'), findsNothing);
+  });
+
+  testWidgets('用户取消 Apple 登录后停留在主登录页且不显示错误', (tester) async {
+    final router = _authRouter(
+      initialLocation: AppRoutes.study,
+      onAppleSignIn: () async {
+        throw const SignInWithAppleAuthorizationException(
+          code: AuthorizationErrorCode.canceled,
+          message: 'canceled',
+        );
+      },
+    );
+
+    await tester.pumpWidget(_app(router));
+    await tester.pumpAndSettle();
+
+    router.push(AppRoutes.login);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continue with Apple'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sign in to Echo Loop'), findsOneWidget);
+    expect(find.text('Continue with Email Code'), findsOneWidget);
+    expect(find.text('Source Page'), findsNothing);
+    expect(find.text('Something went wrong. Try again.'), findsNothing);
+    expect(find.text('Settings'), findsNothing);
   });
 
   testWidgets('点击邮箱后进入单邮箱 OTP 页面', (tester) async {

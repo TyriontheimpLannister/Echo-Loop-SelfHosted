@@ -252,8 +252,14 @@ flutter test integration_test -d macos
 
 ### 7.17 合集内详情路由拍平在顶层 → 返回后自动多退一层（学习计划页 → 资源库）
 
-- 顶层路由拍平会破坏返回栈。
-- 规则：详情页路由层级要与入口栈保持一致。
+- 顶层路由拍平会破坏返回栈。框架以 null-state 按当前 URI 重解析时（Android Activity 重建等，
+  由 OS 决定，故「只在某些机型偶发」），扁平 URI 不携带入口栈层级 → 栈塌回 shell 根 → 返回多退。
+- 规则：**所有从嵌套栈 push 的全屏页都必须下沉为入口页的嵌套子路由**，让 URL 自表达完整栈。
+  新增全屏页统一走 `AppRoutes.pushNested(context, segment)`（相对当前 matchedLocation 追加），
+  漏声明子路由会即时抛「no route」而非静默塌栈。子页 extra 在重解析后会丢失（不可序列化），
+  builder 需兜底（见 `_RestoredRoutePopper`：extra 为空时首帧 pop 回已重建的入口页）。
+- 已覆盖：plan/player/blind/retell 等 7 条音频页（1.0.21）、sentence-detail、pdf-preview。
+  回归测试见 `test/router/app_router_test.dart`。
 
 ### 7.18 统一 TTS：嵌入式发音组件不可在 provider build 期触碰平台/数据库（惰性化）
 

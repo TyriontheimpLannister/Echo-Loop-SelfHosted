@@ -3,6 +3,7 @@
 // 统一的音频列表项，同时用于资源库全局列表和合集详情页。
 // 通过 collectionId 参数区分两种上下文，自动调整菜单、路由和显示逻辑。
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,6 +33,7 @@ import 'dialogs/text_input_dialog.dart';
 import '../features/audio_import/audio_import_models.dart';
 import '../features/audio_import/audio_import_provider.dart';
 import '../features/podcast/podcast_info_sheet.dart';
+import '../features/podcast/podcast_models.dart';
 
 /// 音频列表项 — 资源库全局列表和合集详情页共用
 ///
@@ -68,6 +70,18 @@ class AudioListTile extends ConsumerWidget {
   /// 当前音频菜单作为引导 target 时的 step（由外层注入）。
   final GuideStep? menuStep;
 
+  /// 是否处于多选模式（合集详情页批量删除）。
+  final bool selectionMode;
+
+  /// 多选模式下本项是否被选中。
+  final bool selected;
+
+  /// 长按回调 —— 进入多选并选中本项（由外层注入）。
+  final VoidCallback? onLongPress;
+
+  /// 多选模式下点击本项切换选中态（由外层注入）。
+  final VoidCallback? onSelectToggle;
+
   const AudioListTile({
     super.key,
     required this.audioItem,
@@ -77,6 +91,10 @@ class AudioListTile extends ConsumerWidget {
     this.onDelete,
     this.itemStep,
     this.menuStep,
+    this.selectionMode = false,
+    this.selected = false,
+    this.onLongPress,
+    this.onSelectToggle,
   });
 
   /// 是否在合集上下文中
@@ -131,21 +149,36 @@ class AudioListTile extends ConsumerWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 600;
+        // 多选态：选中项高亮（沿用置顶高亮的柔和主色底），未选中保持普通色。
+        final selectionHighlightColor = theme.colorScheme.primary.withValues(
+          alpha: 0.12,
+        );
+        final Color? cardColor = selectionMode && selected
+            ? selectionHighlightColor
+            : (audioItem.isPinned ? pinnedHighlightColor : null);
         final card = Card(
           margin: EdgeInsets.zero,
-          color: audioItem.isPinned ? pinnedHighlightColor : null,
+          color: cardColor,
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: () => _handleTap(context, ref, l10n),
+            onTap: selectionMode
+                ? onSelectToggle
+                : () => _handleTap(context, ref, l10n),
+            onLongPress: onLongPress,
             child: IntrinsicHeight(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Expanded(
                     child: Padding(
-                      padding: isDesktop
-                          ? const EdgeInsets.fromLTRB(20, 8, 0, 8)
-                          : const EdgeInsets.fromLTRB(16, 8, 0, 8),
+                      // 右侧留白通常由 trailing 菜单（宽 60）撑起，故默认为 0；
+                      // 多选态隐藏了菜单，需补回右内边距以保持左右对称。
+                      padding: EdgeInsets.fromLTRB(
+                        isDesktop ? 20 : 16,
+                        8,
+                        selectionMode ? (isDesktop ? 20 : 16) : 0,
+                        8,
+                      ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
@@ -183,15 +216,39 @@ class AudioListTile extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  _buildTrailing(context, ref, l10n, theme),
+                  // 多选态：右侧放选中框（替代菜单按钮），垂直居中。
+                  if (selectionMode)
+                    Padding(
+                      padding: EdgeInsets.only(right: isDesktop ? 20 : 16),
+                      child: Center(
+                        child: Checkbox(
+                          value: selected,
+                          onChanged: (_) => onSelectToggle?.call(),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    )
+                  else
+                    _buildTrailing(context, ref, l10n, theme),
                 ],
               ),
             ),
           ),
         );
-        final guidedCard = itemStep != null
-            ? GuideTarget(step: itemStep!, child: card)
+        // 置顶项右上角常驻图钉标记，让用户一眼识别已置顶（与背景高亮呼应）。
+        final decoratedCard = audioItem.isPinned
+            ? Stack(
+                children: [
+                  card,
+                  const Positioned(top: 6, right: 6, child: _PinnedBadge()),
+                ],
+              )
             : card;
+        final guidedCard = itemStep != null
+            ? GuideTarget(step: itemStep!, child: decoratedCard)
+            : decoratedCard;
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           child: guidedCard,
@@ -311,12 +368,15 @@ class AudioListTile extends ConsumerWidget {
     final metaStyle = theme.textTheme.bodySmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
-    final isSuspectEmpty =
-        audioItem.contentStatus == AudioContentStatus.suspectEmpty;
+    final contentWarningLabel = _contentWarningLabel(
+      l10n,
+      audioItem.contentStatus,
+    );
+    // CC 徽章已下沉到元信息行（与时长/日期同排），不再触发标签行。
+    final hasCc = audioItem.hasTranscript && !isTranscribing;
     final hasBadgeRow =
-        audioItem.hasTranscript ||
         isTranscribing ||
-        isSuspectEmpty ||
+        contentWarningLabel != null ||
         (progress?.isStarted ?? false) ||
         collectionNames.isNotEmpty ||
         tagData.isNotEmpty ||
@@ -325,10 +385,22 @@ class AudioListTile extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          metaParts.join(' · '),
-          key: const Key('audio_list_tile_metadata_row'),
-          style: metaStyle,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            if (hasCc) ...[
+              _buildTranscriptBadge(theme, l10n.transcript),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Text(
+                metaParts.join(' · '),
+                key: const Key('audio_list_tile_metadata_row'),
+                style: metaStyle,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
         if (hasBadgeRow) ...[
           const SizedBox(height: 4),
@@ -338,11 +410,9 @@ class AudioListTile extends ConsumerWidget {
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              // 内容异常警告（解码失败 / 全程静音）
-              if (isSuspectEmpty)
-                _buildContentWarningBadge(theme, l10n.audioContentEmptyWarning),
-              if (audioItem.hasTranscript && !isTranscribing)
-                _buildTranscriptBadge(theme, l10n.transcript),
+              // 内容异常警告（损坏 / 静音）
+              if (contentWarningLabel != null)
+                _buildContentWarningBadge(theme, contentWarningLabel),
               // 后台转录进度指示（带 spinner，需独立显示）
               if (isTranscribing)
                 Row(
@@ -527,31 +597,46 @@ class AudioListTile extends ConsumerWidget {
     );
   }
 
+  String? _contentWarningLabel(
+    AppLocalizations l10n,
+    AudioContentStatus? status,
+  ) {
+    return switch (status) {
+      AudioContentStatus.damaged => l10n.audioContentDamagedWarning,
+      AudioContentStatus.silent => l10n.audioContentSilentWarning,
+      AudioContentStatus.ok || null => null,
+    };
+  }
+
+  /// 字幕状态标签 —— 采用国际通用的 CC（Closed Caption）徽章。
+  ///
+  /// [label] 保留作为语义标签（无障碍朗读），视觉上只呈现「CC」，
+  /// 更紧凑、辨识度更高。
+  ///
+  /// 采用中性灰：CC 是「有无字幕」的静态属性标记，与状态/标签 chip 的
+  /// 彩色区分，避免与相邻的学习进度 badge 争夺注意力。
   Widget _buildTranscriptBadge(ThemeData theme, String label) {
-    final color = theme.colorScheme.primary;
-    return Container(
-      key: const Key('audio_list_tile_transcript_badge'),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        border: Border.all(color: color.withValues(alpha: 0.55)),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.subtitles_outlined, size: 12, color: color),
-          const SizedBox(width: 3),
-          Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: color,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              height: 1.1,
-            ),
+    final color = theme.colorScheme.onSurfaceVariant;
+    return Tooltip(
+      message: label,
+      child: Container(
+        key: const Key('audio_list_tile_transcript_badge'),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          'CC',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.3,
+            height: 1.0,
           ),
-        ],
+        ),
       ),
     );
   }
@@ -783,7 +868,11 @@ class AudioListTile extends ConsumerWidget {
           } else if (value == 'exportHomeschooling') {
             exportHomeSchoolingPackage(context, ref, audioItem);
           } else if (value == 'exportPdf') {
-            context.push(AppRoutes.pdfPreview, extra: _latestAudioItem(ref));
+            AppRoutes.pushNested(
+              context,
+              AppRoutes.pdfPreviewSegment,
+              extra: _latestAudioItem(ref),
+            );
           } else if (value == 'togglePause') {
             _handleTogglePause(context, ref, isPausedForMenu);
           } else if (value == 'resetProgress') {
@@ -796,11 +885,44 @@ class AudioListTile extends ConsumerWidget {
                 .read(audioLibraryProvider.notifier)
                 .deleteDownloadedAudio(audioItem.id);
           } else if (value == 'podcastEpisodeInfo') {
-            showPodcastEpisodeInfoSheet(context, _latestAudioItem(ref));
+            showPodcastEpisodeInfoSheet(
+              context,
+              _latestAudioItem(ref),
+              podcastImageUrl: _podcastFeedImageUrl(ref),
+            );
           }
         },
       ),
     );
+  }
+
+  String? _podcastFeedImageUrl(WidgetRef ref) {
+    final state = ref.read(collectionListProvider);
+    final candidateIds = <String>[
+      if (collectionId case final id?) id,
+      ...?state.audioToCollectionsMap[audioItem.id],
+    ];
+    for (final id in candidateIds) {
+      final collection = state.rawCollections
+          .where((c) => c.id == id && c.isPodcast)
+          .firstOrNull;
+      if (collection == null) continue;
+      final meta = _decodePodcastMeta(collection.podcastMetaJson);
+      final imageUrl = meta?.imageUrl ?? collection.coverUrl;
+      if (imageUrl != null && imageUrl.trim().isNotEmpty) return imageUrl;
+    }
+    return null;
+  }
+
+  PodcastFeedMeta? _decodePodcastMeta(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return null;
+      return PodcastFeedMeta.fromJson(decoded);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 从 provider 读取当前最新 AudioItem，避免下载完成后 widget 仍持有旧对象。
@@ -1077,15 +1199,33 @@ class AudioListTile extends ConsumerWidget {
     }
     // 仅在确实失败时提示；并发占用（另一单集正在下载）静默忽略，
     // 不误报"下载失败"。
-    final isFailed =
-        ref.read(podcastDownloadControllerProvider) is AudioImportFailed;
-    if (!isFailed) return;
+    final state = ref.read(podcastDownloadControllerProvider);
+    if (state is! AudioImportFailed) return;
+    final detail = _downloadFailureDetail(l10n, state.error);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(l10n.downloadFailed(audioItem.name)),
+        content: Text('${l10n.downloadFailed(audioItem.name)}\n$detail'),
         duration: const Duration(seconds: 4),
       ),
     );
+  }
+
+  String _downloadFailureDetail(
+    AppLocalizations l10n,
+    AudioImportException error,
+  ) {
+    return switch (error.code) {
+      AudioImportFailureCode.invalidUrl => l10n.audioUrlUnsupported,
+      AudioImportFailureCode.unsupportedScheme => l10n.audioUrlUnsupported,
+      AudioImportFailureCode.unsupportedFormat => l10n.audioUrlUnsupported,
+      AudioImportFailureCode.notAudio => l10n.audioUrlUnsupported,
+      AudioImportFailureCode.network => l10n.downloadErrorNetwork,
+      AudioImportFailureCode.storage => l10n.downloadErrorStorage,
+      AudioImportFailureCode.duplicate => error.message,
+      AudioImportFailureCode.canceled => l10n.cancel,
+      AudioImportFailureCode.unknown =>
+        error.message.isEmpty ? l10n.audioDownloadFailed : error.message,
+    };
   }
 
   Future<void> _showRenameDialog(BuildContext context, WidgetRef ref) async {
@@ -1103,6 +1243,22 @@ class AudioListTile extends ConsumerWidget {
           .read(audioLibraryProvider.notifier)
           .updateAudioItem(audioItem.copyWith(name: name));
     }
+  }
+}
+
+/// 置顶标记徽章 —— 卡片右上角常驻图钉，直观表达该音频已置顶。
+///
+/// 采用与菜单内图钉一致的倾斜角度与 [AppTheme.pinColor]，视觉语言统一。
+class _PinnedBadge extends StatelessWidget {
+  const _PinnedBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.rotate(
+      key: const Key('audio_list_tile_pinned_badge'),
+      angle: 0.52,
+      child: const Icon(Icons.push_pin, size: 14, color: AppTheme.pinColor),
+    );
   }
 }
 

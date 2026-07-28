@@ -169,7 +169,8 @@ class LocalStoreKitPurchaseService implements PurchaseService {
   }
 
   @override
-  Future<Entitlement> restore() async => _rebuildActiveFromStore();
+  Future<RestorePurchaseResult> restore() async =>
+      RestorePurchaseResult(entitlement: await _rebuildActiveFromStore());
 
   @override
   Future<void> identify(String? userId) async {

@@ -21,19 +21,19 @@ const YearlyValue _empty = (perMonth: null, savePercent: null);
 
 /// 根据月付与年付套餐计算年付的「每月折合价」与「节省百分比」。
 ///
-/// 折扣按用户首年实际支付价计算：年付有付费首期促销时使用促销价，
+/// 折扣按用户首年实际支付价计算：年付有付费 intro offer 时使用优惠价，
 /// 否则使用普通年付价。仅当价格都能解析为正数、且年付首年价确实比
 /// 「月付×12」便宜时才返回有效值，否则返回 [_empty]。
 YearlyValue computeYearlyValue(
   SubscriptionPlan monthly,
   SubscriptionPlan yearly,
 ) {
-  final monthlyAmount = _parseAmount(monthly.priceString);
+  final monthlyAmount = parseLocalizedPriceAmount(monthly.priceString);
   final effectiveYearlyPrice =
       yearly.introOffer != null && !yearly.introOffer!.isFreeTrial
       ? yearly.introOffer!.priceString
       : yearly.priceString;
-  final yearlyAmount = _parseAmount(effectiveYearlyPrice);
+  final yearlyAmount = parseLocalizedPriceAmount(effectiveYearlyPrice);
   if (monthlyAmount == null || yearlyAmount == null) return _empty;
   if (monthlyAmount <= 0 || yearlyAmount <= 0) return _empty;
 
@@ -42,26 +42,29 @@ YearlyValue computeYearlyValue(
 
   final savePercent = ((1 - yearlyAmount / fullPrice) * 100).round();
   final perMonthAmount = yearlyAmount / 12;
-  final perMonth = _formatLike(effectiveYearlyPrice, perMonthAmount);
+  final perMonth = formatLocalizedPriceLike(
+    effectiveYearlyPrice,
+    perMonthAmount,
+  );
   return (perMonth: perMonth, savePercent: savePercent);
 }
 
-/// 计算平台付费首期优惠相对续费价的折扣百分比。
+/// 计算平台付费 intro offer 相对续费价的折扣百分比。
 ///
 /// 仅处理非免费试用的 intro offer；免费试用由 CTA 和套餐卡副标题披露，避免在
-/// 顶部促销条重复展示。价格解析失败、首期价不低于续费价时返回 null。
+/// 顶部促销条重复展示。价格解析失败、优惠价不低于续费价时返回 null。
 int? computeIntroOfferDiscountPercent(SubscriptionPlan plan) {
   if (isIntroOfferDiscounted(plan) != true) return null;
 
   final offer = plan.introOffer;
   if (offer == null) return null;
-  final introAmount = _parseAmount(offer.priceString);
-  final renewalAmount = _parseAmount(offer.renewalPriceString);
+  final introAmount = parseLocalizedPriceAmount(offer.priceString);
+  final renewalAmount = parseLocalizedPriceAmount(offer.renewalPriceString);
   if (introAmount == null || renewalAmount == null) return null;
   return ((1 - introAmount / renewalAmount) * 100).round();
 }
 
-/// 判断付费首期价格是否低于续费价。
+/// 判断付费 intro offer 价格是否低于续费价。
 ///
 /// 返回 true 表示可确认有折扣；false 表示可确认没有价格优势；null 表示无付费
 /// intro offer 或价格字符串无法可靠解析，调用方可选择隐藏或回退为具体条款文案。
@@ -69,18 +72,30 @@ bool? isIntroOfferDiscounted(SubscriptionPlan plan) {
   final offer = plan.introOffer;
   if (offer == null || offer.isFreeTrial) return null;
 
-  final introAmount = _parseAmount(offer.priceString);
-  final renewalAmount = _parseAmount(offer.renewalPriceString);
+  final introAmount = parseLocalizedPriceAmount(offer.priceString);
+  final renewalAmount = parseLocalizedPriceAmount(offer.renewalPriceString);
   if (introAmount == null || renewalAmount == null) return null;
   if (introAmount <= 0 || renewalAmount <= 0) return null;
   return introAmount < renewalAmount;
+}
+
+/// 按续费价格串和百分比折扣推导 intro offer 价格串。
+///
+/// Paddle 新 plans DTO 只返回地区化续费价与折扣百分比；真实扣款仍由 Paddle
+/// checkout 决定，这里只把同一价格模板转换成 UI 展示用的优惠价。
+String? discountedPriceString(String renewalPriceString, num discountPercent) {
+  if (!(discountPercent > 0 && discountPercent <= 100)) return null;
+  final renewalAmount = parseLocalizedPriceAmount(renewalPriceString);
+  if (renewalAmount == null || renewalAmount < 0) return null;
+  final discountedAmount = renewalAmount * (100 - discountPercent) / 100;
+  return formatLocalizedPriceLike(renewalPriceString, discountedAmount);
 }
 
 /// 从本地化价格串中提取数值金额，无法解析返回 null。
 ///
 /// 处理思路：先取出所有数字与分隔符（`. ,`），再根据「最后一个分隔符」判定它是
 /// 小数点还是千分位——最后一个分隔符后跟 1~2 位数字视为小数点，其余分隔符按千分位丢弃。
-double? _parseAmount(String priceString) {
+double? parseLocalizedPriceAmount(String priceString) {
   final match = RegExp(r'[0-9][0-9.,]*').firstMatch(priceString);
   if (match == null) return null;
   final raw = match.group(0)!;
@@ -102,7 +117,7 @@ double? _parseAmount(String priceString) {
 ///
 /// 例：template=`US$39.99`, amount=3.3325 → `US$3.33`；
 /// template=`39,99 €`, amount=3.33 → `3.33 €`（保留符号在原侧）。
-String _formatLike(String template, double amount) {
+String formatLocalizedPriceLike(String template, double amount) {
   final numberMatch = RegExp(r'[0-9][0-9.,]*').firstMatch(template);
   final value = amount.toStringAsFixed(2);
   if (numberMatch == null) return value;

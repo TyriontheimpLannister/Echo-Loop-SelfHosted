@@ -1075,8 +1075,9 @@ class _RetellPlayerScreenState extends ConsumerState<RetellPlayerScreen>
     final lpState = ref.read(listeningPracticeProvider);
     final audioName = lpState.currentAudioItem?.name ?? '';
 
-    await context.push(
-      AppRoutes.sentenceDetail,
+    await AppRoutes.pushNested(
+      context,
+      AppRoutes.sentenceDetailSegment,
       extra: SentenceDetailArgs(
         audioItemId: widget.audioItemId,
         audioName: audioName,

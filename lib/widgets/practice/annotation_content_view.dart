@@ -277,9 +277,9 @@ class _AnnotationContentViewState extends ConsumerState<AnnotationContentView> {
     if (!mounted || generation != _preloadGeneration) return;
 
     if (sgLoaded) {
-      final autoExpand = ref
-          .read(learningSettingsProvider)
-          .autoExpandCachedAnnotation;
+      final settings = ref.read(learningSettingsProvider);
+      final autoExpand =
+          settings.autoShowAiExplanation && settings.autoShowAiSenseGroups;
       if (!autoExpand) return;
       final result = ai.getCachedSenseGroups(widget.text);
       if (result != null && result.medium.isNotEmpty) {
@@ -304,7 +304,7 @@ class _AnnotationContentViewState extends ConsumerState<AnnotationContentView> {
   /// 返回的 Future 在 **medium 就绪**（medium 流完）时 settle——供拆意群按钮尽早释放、
   /// 让用户可交互 medium；fine 在后台继续流入 `_senseGroupResult`，medium→fine 切换由
   /// [_awaitSenseGroupFine] 协调加载态。逐帧 setState 使 chunk 随 prop 变化自上而下渐显。
-  Future<void> _requestSenseGroups() async {
+  Future<void> _requestSenseGroups(SentenceAiRequestSource source) async {
     // 已有活跃流：复用其 medium 就绪信号（去重，避免重复起流）
     final activeReady = _sgMediumReady;
     if (activeReady != null && _sgSub != null) {
@@ -343,6 +343,7 @@ class _AnnotationContentViewState extends ConsumerState<AnnotationContentView> {
           sentenceEndMs: endMs,
           wordTimestamps: _wordTimestamps,
           cancelToken: cancel,
+          respectLocalQuotaReset: source == SentenceAiRequestSource.automatic,
         )
         .listen(
           (frame) {
@@ -366,7 +367,12 @@ class _AnnotationContentViewState extends ConsumerState<AnnotationContentView> {
             if (e is AiFeatureAuthRequiredException) {
               _showAiFeatureSignInDialog();
             } else if (e is AiFeatureQuotaExceededException) {
-              unawaited(_showAiQuotaExceededDialog(e, force: true));
+              unawaited(
+                _showAiQuotaExceededDialog(
+                  e,
+                  force: source == SentenceAiRequestSource.userTap,
+                ),
+              );
             } else {
               AppLogger.log('SenseGroup', '请求意群失败: $e');
               final l10n = AppLocalizations.of(context);
@@ -768,9 +774,14 @@ class _AnnotationContentViewState extends ConsumerState<AnnotationContentView> {
     final nativeLanguage = ref.watch(
       appSettingsProvider.select((s) => s.nativeLanguage),
     );
-    final autoExpand = ref
-        .watch(learningSettingsProvider)
-        .autoExpandCachedAnnotation;
+    final learningSettings = ref.watch(learningSettingsProvider);
+    final autoShowAiExplanation = learningSettings.autoShowAiExplanation;
+    final autoShowAiAnalysis =
+        autoShowAiExplanation && learningSettings.autoShowAiAnalysis;
+    final autoShowAiTranslation =
+        autoShowAiExplanation && learningSettings.autoShowAiTranslation;
+    final autoShowAiSenseGroups =
+        autoShowAiExplanation && learningSettings.autoShowAiSenseGroups;
     // watch 共享字幕投影：撑起其 autoDispose 生命周期（视图在屏则常驻）+ 同步取前后句。
     // 翻译缓存 key 包含前后句，必须等字幕投影就绪后才允许自动翻译；
     // 否则首帧会用 null/null 写入无上下文 key，返回页面时再用带上下文 key 读取就会 miss。
@@ -799,7 +810,7 @@ class _AnnotationContentViewState extends ConsumerState<AnnotationContentView> {
       return _neighborTexts(loadedSentences);
     }
 
-    final cachedTranslation = autoExpand
+    final cachedTranslation = autoShowAiTranslation
         ? ai
               ?.getCachedTranslation(
                 widget.text,
@@ -809,7 +820,7 @@ class _AnnotationContentViewState extends ConsumerState<AnnotationContentView> {
               )
               ?.translation
         : null;
-    final cachedAnalysis = autoExpand
+    final cachedAnalysis = autoShowAiAnalysis
         ? ai?.getCachedAnalysis(widget.text, targetLanguage: nativeLanguage)
         : null;
     final accessToken = ref
@@ -1000,8 +1011,11 @@ class _AnnotationContentViewState extends ConsumerState<AnnotationContentView> {
                   cachedTranslation: cachedTranslation,
                   cachedAnalysis: cachedAnalysis,
                   autoLoadTranslation:
-                      shouldAutoLoadSentenceAi && translationContextReady,
-                  autoLoadAnalysis: shouldAutoLoadSentenceAi,
+                      shouldAutoLoadSentenceAi &&
+                      autoShowAiTranslation &&
+                      translationContextReady,
+                  autoLoadAnalysis:
+                      shouldAutoLoadSentenceAi && autoShowAiAnalysis,
                   onTranslationUserIntent: () {
                     ref
                         .read(usageTrackerProvider)
@@ -1023,6 +1037,8 @@ class _AnnotationContentViewState extends ConsumerState<AnnotationContentView> {
                   playedSenseGroupIndices: _playedSenseGroupIndices,
                   onTapSenseGroup: _handleTapSenseGroup,
                   onRequestSenseGroups: _requestSenseGroups,
+                  autoLoadSenseGroups:
+                      shouldAutoLoadSentenceAi && autoShowAiSenseGroups,
                   onAwaitSenseGroupFine: _awaitSenseGroupFine,
                   hasWordTimestamps: _wordTimestamps != null,
                   highlightedSegments: widget.highlightedSegments,

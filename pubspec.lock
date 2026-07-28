@@ -257,6 +257,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
+  charset_converter:
+    dependency: "direct main"
+    description:
+      path: "third_party/charset_converter"
+      relative: true
+    source: path
+    version: "2.4.0"
   checked_yaml:
     dependency: transitive
     description:
@@ -680,6 +687,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_math_fork:
+    dependency: transitive
+    description:
+      name: flutter_math_fork
+      sha256: "6d5f2f1aa57ae539ffb0a04bb39d2da67af74601d685a161aff7ce5bda5fa407"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.7.4"
   flutter_plugin_android_lifecycle:
     dependency: transitive
     description:
@@ -744,6 +759,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.0"
+  flutter_svg:
+    dependency: "direct main"
+    description:
+      name: flutter_svg
+      sha256: "35882981abcbfb8c15b286f0cd690ff25bac12d95eff3e25ee207f37d4c42e7f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.0"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -794,6 +817,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.0"
+  fsrs:
+    dependency: "direct main"
+    description:
+      name: fsrs
+      sha256: b50dbee450a424dbac4fb0f49cae25ff2e4e6d01844caa1ec0c26de5baba8071
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.1"
   fuchsia_remote_debug_protocol:
     dependency: transitive
     description: flutter
@@ -879,6 +910,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.20.0"
+  gpt_markdown:
+    dependency: "direct main"
+    description:
+      name: gpt_markdown
+      sha256: ab6fe339f500104816139a034b8a23a125dadbc1988eda1641c6616562a4962b
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.8"
   graphs:
     dependency: transitive
     description:
@@ -1140,6 +1179,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.4"
+  nested:
+    dependency: transitive
+    description:
+      name: nested
+      sha256: "03bac4c528c64c95c722ec99280375a6f2fc708eec17c7b3f07253b626cd2a20"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
   octo_image:
     dependency: transitive
     description:
@@ -1221,7 +1268,7 @@ packages:
     source: hosted
     version: "2.2.1"
   path_provider_platform_interface:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: path_provider_platform_interface
       sha256: "88f5779f72ba699763fa3a3b06aa4bf6de76c8e5de842cf6f29e2e06476c2334"
@@ -1380,6 +1427,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.0.5"
+  provider:
+    dependency: transitive
+    description:
+      name: provider
+      sha256: "4e82183fa20e5ca25703ead7e05de9e4cceed1fbd1eadc1ac3cb6f565a09f272"
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.1.5+1"
   pub_semver:
     dependency: transitive
     description:
@@ -1889,6 +1944,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
+  tuple:
+    dependency: transitive
+    description:
+      name: tuple
+      sha256: a97ce2013f240b2f3807bcbaf218765b6f301c3eff91092bcfa23a039e7dd151
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.2"
   typed_data:
     dependency: transitive
     description:
@@ -1985,6 +2048,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.5.3"
+  vector_graphics:
+    dependency: transitive
+    description:
+      name: vector_graphics
+      sha256: "2306c03da2ba81724afeb589c351ebbc0aa7d86005925be8f8735856dbe5e42d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.2"
+  vector_graphics_codec:
+    dependency: transitive
+    description:
+      name: vector_graphics_codec
+      sha256: "99fd9fbd34d9f9a32efd7b6a6aae14125d8237b10403b422a6a6dfeac2806146"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.13"
+  vector_graphics_compiler:
+    dependency: transitive
+    description:
+      name: vector_graphics_compiler
+      sha256: "142a9146f447d15b10bdc00e21d5f4d83e5b32bb5f8f8f5a04c75311344923a3"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.6"
   vector_math:
     dependency: transitive
     description:

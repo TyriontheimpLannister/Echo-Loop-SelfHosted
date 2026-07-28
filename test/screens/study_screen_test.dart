@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:echo_loop/database/daos/stage_completion_dao.dart';
 import 'package:echo_loop/database/enums.dart';
@@ -391,7 +392,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 子阶段标签
-    expect(find.textContaining('Intensive Listening'), findsAtLeast(1));
+    expect(find.textContaining('Listen sentence by sentence'), findsAtLeast(1));
     // 按钮文案为 Continue（已开始首次学习）
     expect(find.text('Continue'), findsAtLeast(1));
   });
@@ -474,10 +475,54 @@ void main() {
     await tester.pumpAndSettle();
 
     // 不应出现 Hero Card 的 "Continue Learning" 标签
-    expect(find.text('Continue Learning'), findsNothing);
+    expect(find.text('Continue practicing'), findsNothing);
     // 任务应直接在对应 section 中显示
     expect(find.text('Review Audio'), findsAtLeast(1));
     expect(find.text('First Study Audio'), findsAtLeast(1));
+  });
+
+  testWidgets('任务分组标题使用固定 SVG 图标替换 emoji', (tester) async {
+    final now = DateTime(2026, 2, 25, 12, 0);
+    final audioItems = [
+      AudioItem(
+        id: 'review-audio',
+        name: 'Review Audio',
+        audioPath: 'audios/review.mp3',
+        addedDate: now,
+      ),
+      AudioItem(
+        id: 'first-audio',
+        name: 'First Study Audio',
+        audioPath: 'audios/first.mp3',
+        addedDate: now,
+      ),
+    ];
+    final progressState = LearningProgressState(
+      progressMap: {
+        'review-audio': LearningProgress(
+          audioItemId: 'review-audio',
+          currentStage: LearningStage.review1,
+          currentSubStage: SubStageType.blindListen,
+          lastStageCompletedAt: now.subtract(const Duration(hours: 24)),
+          updatedAt: now,
+        ),
+      },
+      isLoading: false,
+    );
+
+    await tester.pumpWidget(
+      createTestWidget(
+        audioItems: audioItems,
+        progressState: progressState,
+        fixedNow: now,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('🔁'), findsNothing);
+    expect(find.text('🌱'), findsNothing);
+    expect(_findSvgAsset('assets/icon/refresh.svg'), findsOneWidget);
+    expect(_findSvgAsset('assets/icon/reading.svg'), findsOneWidget);
   });
 
   testWidgets('学习社群入口保持紧凑高度并使用发现入口青蓝色系', (tester) async {
@@ -698,4 +743,13 @@ void main() {
 
     expect(find.textContaining('Recently Completed'), findsNothing);
   });
+}
+
+Finder _findSvgAsset(String assetName) {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget is SvgPicture &&
+        widget.bytesLoader is SvgAssetLoader &&
+        (widget.bytesLoader as SvgAssetLoader).assetName == assetName,
+  );
 }

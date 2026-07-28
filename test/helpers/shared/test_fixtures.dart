@@ -67,11 +67,13 @@ Collection createTestCollection({
   String name = 'Test Collection',
   bool isPinned = false,
   DateTime? createdDate,
+  DateTime? updatedAt,
 }) {
   return Collection(
     id: id,
     name: name,
     createdDate: createdDate ?? DateTime(2026, 1, 1),
+    updatedAt: updatedAt,
     isPinned: isPinned,
   );
 }

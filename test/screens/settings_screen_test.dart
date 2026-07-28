@@ -4,12 +4,14 @@
 library;
 
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:echo_loop/providers/app_update_provider.dart';
@@ -89,7 +91,89 @@ void main() {
   }
 
   group('SettingsScreen', () {
+    const settingsSvgAssets = [
+      'assets/icon/account-1.svg',
+      'assets/icon/diamond.svg',
+      'assets/icon/artist-palette.svg',
+      'assets/icon/locale.svg',
+      'assets/icon/speak.svg',
+      'assets/icon/bell.svg',
+      'assets/icon/book-shelf.svg',
+      'assets/icon/microphone.svg',
+      'assets/icon/speaker.svg',
+      'assets/icon/play-pause.svg',
+      'assets/icon/locale-1.svg',
+      'assets/icon/diskette.svg',
+      'assets/icon/trash-bin.svg',
+      'assets/icon/refresh.svg',
+      'assets/icon/documents.svg',
+      'assets/icon/lock.svg',
+      'assets/icon/feedback.svg',
+      'assets/icon/group.svg',
+    ];
+
+    Finder findSvgAsset(String assetName) {
+      return find.byWidgetPredicate(
+        (widget) =>
+            widget is SvgPicture &&
+            widget.bytesLoader is SvgAssetLoader &&
+            (widget.bytesLoader as SvgAssetLoader).assetName == assetName,
+      );
+    }
+
     group('渲染', () {
+      test('设置页 SVG 图标统一使用 24x24 viewBox', () {
+        for (final asset in settingsSvgAssets) {
+          final content = File(asset).readAsStringSync();
+          final svgTag = RegExp(
+            r'<svg\b[^>]*>',
+            dotAll: true,
+          ).firstMatch(content)?.group(0);
+
+          expect(svgTag, isNotNull, reason: asset);
+          expect(svgTag, contains('viewBox="0 0 24 24"'), reason: asset);
+          expect(svgTag, contains('width="24"'), reason: asset);
+          expect(svgTag, contains('height="24"'), reason: asset);
+          expect(
+            RegExp(r'\sviewBox=').allMatches(svgTag!).length,
+            1,
+            reason: asset,
+          );
+          expect(
+            RegExp(r'\swidth=').allMatches(svgTag).length,
+            1,
+            reason: asset,
+          );
+          expect(
+            RegExp(r'\sheight=').allMatches(svgTag).length,
+            1,
+            reason: asset,
+          );
+          expect(content, isNot(contains('<style')), reason: asset);
+        }
+      });
+
+      test('设置页满框 SVG 图标声明资源级视觉缩放', () {
+        const visuallyScaledAssets = {
+          'assets/icon/diskette.svg',
+          'assets/icon/trash-bin.svg',
+          'assets/icon/refresh.svg',
+          'assets/icon/lock.svg',
+          'assets/icon/group.svg',
+          'assets/icon/play-pause.svg',
+        };
+
+        for (final asset in visuallyScaledAssets) {
+          final content = File(asset).readAsStringSync();
+          expect(
+            content,
+            contains('data-settings-visual-scale='),
+            reason: asset,
+          );
+          expect(content, contains('translate(12 12) scale('), reason: asset);
+        }
+      });
+
       testWidgets('显示主题设置项', (tester) async {
         await tester.pumpWidget(
           createTestScreen(const SettingsScreen(), overrides: buildOverrides()),
@@ -110,6 +194,107 @@ void main() {
         expect(find.text('Interface Language'), findsOneWidget);
         // 默认跟随系统
         expect(find.text('Follow System'), findsAtLeast(1));
+      });
+
+      testWidgets('普通设置项使用 SVG 图标替代 emoji', (tester) async {
+        await tester.pumpWidget(
+          createTestScreen(
+            const SettingsScreen(),
+            overrides: buildOverrides(
+              showDeveloperOptions: false,
+              showOfflineAsrSection: true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(findSvgAsset('assets/icon/account-1.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/diamond.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/artist-palette.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/locale.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/speak.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/bell.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/book-shelf.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/microphone.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/speaker.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/play-pause.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/locale-1.svg'), findsOneWidget);
+
+        await tester.scrollUntilVisible(find.text('About'), 200);
+        await tester.pumpAndSettle();
+        expect(findSvgAsset('assets/icon/refresh.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/documents.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/lock.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/feedback.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/group.svg'), findsOneWidget);
+
+        await tester.scrollUntilVisible(find.text('Backup & Restore'), 200);
+        await tester.pumpAndSettle();
+        expect(findSvgAsset('assets/icon/diskette.svg'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/trash-bin.svg'), findsOneWidget);
+
+        for (final emoji in [
+          '👤',
+          '💎',
+          '🎨',
+          '🌐',
+          '🗣️',
+          '🔔',
+          '📚',
+          '🎙️',
+          '🔊',
+          '▶️',
+          '📖',
+          '💾',
+          '🗑️',
+          '🔄',
+          '📜',
+          '🔒',
+          '✉️',
+          '👥',
+        ]) {
+          expect(find.text(emoji), findsNothing);
+        }
+      });
+
+      testWidgets('设置页普通图标保留 leading 占位并收紧内部绘制尺寸', (tester) async {
+        await tester.pumpWidget(
+          createTestScreen(
+            const SettingsScreen(),
+            overrides: buildOverrides(showDeveloperOptions: false),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final accountIcon = tester.widget<SvgPicture>(
+          findSvgAsset('assets/icon/account-1.svg'),
+        );
+        expect(accountIcon.width, 26);
+        expect(accountIcon.height, 26);
+        expect(
+          tester.getSize(
+            find
+                .ancestor(
+                  of: findSvgAsset('assets/icon/account-1.svg'),
+                  matching: find.byType(SizedBox),
+                )
+                .first,
+          ),
+          const Size(32, 32),
+        );
+
+        await tester.scrollUntilVisible(find.text('View Source Code'), 200);
+        await tester.pumpAndSettle();
+
+        final refreshIcon = tester.widget<SvgPicture>(
+          findSvgAsset('assets/icon/refresh.svg'),
+        );
+        expect(refreshIcon.width, 26);
+        expect(refreshIcon.height, 26);
+
+        final githubIcons = tester.widgetList<FaIcon>(find.byType(FaIcon));
+        expect(githubIcons, hasLength(1));
+        expect(githubIcons.single.size, 20);
       });
 
       testWidgets('显示关于信息区域', (tester) async {
@@ -359,7 +544,7 @@ void main() {
         final upgradeBadge = tester.widget<Text>(find.text('Upgrade'));
         expect(upgradeBadge.style?.color, const Color(0xFF111111));
         // 顶部不再有大金卡的「会员」状态徽章
-        expect(find.text('Member'), findsNothing);
+        expect(find.text('Premium'), findsNothing);
       });
 
       testWidgets('已订阅：显示「会员」徽章与套餐摘要', (tester) async {
@@ -386,7 +571,7 @@ void main() {
 
         // 保持简洁：只有标题 + 「会员」徽章，无副标题详情
         expect(find.text('Subscription'), findsOneWidget);
-        expect(find.text('Member'), findsOneWidget);
+        expect(find.text('Premium'), findsOneWidget);
         expect(find.text('Upgrade'), findsNothing);
       });
 
@@ -507,7 +692,7 @@ void main() {
 
         expect(find.text('Developer'), findsOneWidget);
         expect(find.text('Time Machine'), findsOneWidget);
-        expect(find.text('Using system time'), findsOneWidget);
+        expect(find.text('Use system time'), findsOneWidget);
       });
 
       testWidgets('开发者选项开启且已设置时时显示当前调试时间', (tester) async {
@@ -551,6 +736,12 @@ void main() {
         expect(find.text('Dark Mode'), findsOneWidget);
         // 对话框标题 + 列表中的 Follow System
         expect(find.text('Follow System'), findsAtLeast(1));
+        expect(find.byIcon(Icons.brightness_auto_rounded), findsOneWidget);
+        expect(find.byIcon(Icons.light_mode_rounded), findsOneWidget);
+        expect(find.byIcon(Icons.dark_mode_rounded), findsOneWidget);
+        expect(find.text('⚙️'), findsNothing);
+        expect(find.text('☀️'), findsNothing);
+        expect(find.text('🌛'), findsNothing);
       });
 
       testWidgets('选择 Dark 主题后状态更新', (tester) async {
@@ -626,7 +817,7 @@ void main() {
         await tester.tap(find.text('Save'));
         await tester.pumpAndSettle();
 
-        expect(find.text('Using system time'), findsOneWidget);
+        expect(find.text('Use system time'), findsOneWidget);
         expect(find.text('Debug time: 2026-03-11 22:15'), findsNothing);
       });
     });

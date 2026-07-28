@@ -75,6 +75,7 @@ import 'package:echo_loop/providers/offline_asr_settings_provider.dart';
 import 'package:echo_loop/providers/repeat_flow/repeat_flow_engine.dart';
 import 'package:echo_loop/providers/settings_provider.dart';
 import 'package:echo_loop/providers/tag_provider.dart';
+import 'package:echo_loop/providers/time_provider.dart';
 import 'package:echo_loop/services/asr/offline_asr_engine.dart';
 import 'package:echo_loop/services/study_time_service.dart';
 
@@ -264,7 +265,10 @@ class FakeCollectionList extends CollectionList {
     final collections = [...state.rawCollections];
     final index = collections.indexWhere((c) => c.id == id);
     if (index != -1) {
-      collections[index] = collections[index].copyWith(name: newName);
+      collections[index] = collections[index].copyWith(
+        name: newName,
+        updatedAt: DateTime.now(),
+      );
       state = state.copyWith(rawCollections: collections);
     }
   }
@@ -302,7 +306,49 @@ class FakeCollectionList extends CollectionList {
       if (!ids.contains(audioId)) ids.add(audioId);
     }
     newMap[collectionId] = ids;
-    state = state.copyWith(audioIdsMap: newMap);
+    _touchCollectionUpdatedAt(collectionId, audioIdsMap: newMap);
+  }
+
+  @override
+  Future<void> removeAudioFromCollection(
+    String collectionId,
+    String audioId,
+  ) async {
+    await removeAudiosFromCollection(collectionId, {audioId});
+  }
+
+  @override
+  Future<void> removeAudiosFromCollection(
+    String collectionId,
+    Set<String> audioIds,
+  ) async {
+    final newMap = Map<String, List<String>>.from(state.audioIdsMap);
+    final ids = List<String>.from(newMap[collectionId] ?? [])
+      ..removeWhere(audioIds.contains);
+    newMap[collectionId] = ids;
+    _touchCollectionUpdatedAt(collectionId, audioIdsMap: newMap);
+  }
+
+  @override
+  Future<void> createPodcastCollection(Collection collection) async {
+    state = state.copyWith(
+      rawCollections: [...state.rawCollections, collection],
+      audioIdsMap: {...state.audioIdsMap, collection.id: []},
+    );
+  }
+
+  @override
+  Future<void> updatePodcastCollection(
+    Collection updated, {
+    bool touchUpdatedAt = true,
+  }) async {
+    final collections = [...state.rawCollections];
+    final index = collections.indexWhere((c) => c.id == updated.id);
+    if (index == -1) return;
+    collections[index] = touchUpdatedAt
+        ? updated.copyWith(updatedAt: DateTime.now())
+        : updated;
+    state = state.copyWith(rawCollections: collections);
   }
 
   @override
@@ -318,6 +364,25 @@ class FakeCollectionList extends CollectionList {
         ..removeWhere(audioIds.contains);
     }
     state = state.copyWith(audioIdsMap: newMap);
+  }
+
+  void _touchCollectionUpdatedAt(
+    String collectionId, {
+    Map<String, List<String>>? audioIdsMap,
+  }) {
+    final collections = [...state.rawCollections];
+    final index = collections.indexWhere((c) => c.id == collectionId);
+    if (index == -1) {
+      if (audioIdsMap != null) {
+        state = state.copyWith(audioIdsMap: audioIdsMap);
+      }
+      return;
+    }
+    collections[index] = collections[index].copyWith(updatedAt: DateTime.now());
+    state = state.copyWith(
+      rawCollections: collections,
+      audioIdsMap: audioIdsMap,
+    );
   }
 }
 
@@ -605,6 +670,21 @@ class FakeLearningProgressNotifier extends LearningProgressNotifier {
       progressMap: newMap,
       completionsByAudio: newCompletions,
     );
+  }
+
+  @override
+  Future<void> unlockCurrentReview(String audioItemId) async {
+    // 与真实实现同守卫，仅省去持久化：写 manualUnlockAt 解除当前轮时间锁。
+    final progress = state.progressMap[audioItemId];
+    if (progress == null || !progress.isInReviewStage) return;
+    if (!progress.isReviewLockedAt(ref.read(nowProvider)())) return;
+    final now = DateTime.now();
+    final newMap = Map<String, LearningProgress>.from(state.progressMap);
+    newMap[audioItemId] = progress.copyWith(
+      manualUnlockAt: now,
+      updatedAt: now,
+    );
+    state = state.copyWith(progressMap: newMap);
   }
 
   @override

@@ -153,9 +153,6 @@ jobs:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
-          REVENUECAT_API_KEY_GOOGLE: ${{ vars.REVENUECAT_API_KEY_GOOGLE }}
-          # 侧载 APK 走网页支付所需的 RevenueCat Web Purchase Link 模板。
-          WEB_PURCHASE_LINK_TEMPLATE: ${{ vars.WEB_PURCHASE_LINK_TEMPLATE }}
         run: |
           flutter clean
           DART_DEFINES=(
@@ -168,19 +165,8 @@ jobs:
           if [[ -n "$POSTHOG_API_KEY" ]]; then
             DART_DEFINES+=("--dart-define=POSTHOG_API_KEY=${POSTHOG_API_KEY}")
           fi
-          if [[ -z "$REVENUECAT_API_KEY_GOOGLE" ]]; then
-            echo "ERROR: REVENUECAT_API_KEY_GOOGLE repository variable is required for Android release builds." >&2
-            exit 1
-          fi
-          DART_DEFINES+=("--dart-define=REVENUECAT_API_KEY_GOOGLE=${REVENUECAT_API_KEY_GOOGLE}")
-          # 侧载 APK（GitHub / 官网直装）：声明 direct 渠道 → 走网页支付而非 Play Billing。
-          # 缺 WEB_PURCHASE_LINK_TEMPLATE 时优雅退回原行为（不启用网页支付）。
+          # 侧载 APK（GitHub / 官网直装）：声明 direct 渠道 → 走后端 Paddle Checkout。
           DART_DEFINES+=("--dart-define=DISTRIBUTION_CHANNEL=direct")
-          if [[ -n "$WEB_PURCHASE_LINK_TEMPLATE" ]]; then
-            DART_DEFINES+=("--dart-define=WEB_PURCHASE_LINK_TEMPLATE=${WEB_PURCHASE_LINK_TEMPLATE}")
-          else
-            echo "WARN: WEB_PURCHASE_LINK_TEMPLATE 未配置，侧载 APK 将无法使用网页支付。" >&2
-          fi
           flutter build apk --release --flavor=prod \
             --target-platform android-arm64 \
             --build-name="$BUILD_NAME" \

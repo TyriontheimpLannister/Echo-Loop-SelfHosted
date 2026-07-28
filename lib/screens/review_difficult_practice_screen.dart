@@ -22,6 +22,7 @@ import 'package:go_router/go_router.dart';
 import '../router/app_router.dart';
 import '../widgets/speech_permission_dialog.dart';
 import '../database/enums.dart';
+import '../features/chatbot/widgets/sentence_chat_button.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/playback_speed.dart';
 import '../providers/learning_plan_provider.dart';
@@ -517,6 +518,17 @@ class _ReviewDifficultPracticeScreenState
                 onPressed: _handleExit,
               ),
               actions: [
+                // AI 助手入口：打开前暂停自动推进（同设置按钮的处理）。
+                SentenceChatButton(
+                  sentenceText: currentSentence?.text ?? '',
+                  onBeforeOpen: () {
+                    if (playerState.isAnnotationMode) {
+                      player.repeatEngine?.onUserInteraction();
+                    } else {
+                      player.enterWaitingForUserInBlindMode();
+                    }
+                  },
+                ),
                 IconButton(
                   icon: const Icon(Icons.tune),
                   onPressed: () {

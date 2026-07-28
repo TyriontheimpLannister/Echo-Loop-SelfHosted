@@ -1,5 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:echo_loop/database/providers.dart';
+import 'package:echo_loop/features/remote_config/remote_config.dart';
+import 'package:echo_loop/features/remote_config/remote_config_providers.dart';
 import 'package:echo_loop/models/audio_item.dart';
 import 'package:echo_loop/providers/audio_library_provider.dart';
 import 'package:echo_loop/providers/collection_provider.dart';
@@ -13,7 +19,9 @@ import 'package:echo_loop/providers/settings_provider.dart';
 import 'package:echo_loop/providers/transcription_task_provider.dart';
 import 'package:echo_loop/providers/local_transcription_task_provider.dart';
 import 'package:echo_loop/features/onboarding_survey/providers/onboarding_survey_provider.dart';
+import 'package:echo_loop/services/app_logger.dart';
 import 'package:echo_loop/services/transcription_api_client.dart';
+import 'package:echo_loop/utils/transcript_picker.dart';
 import 'package:echo_loop/widgets/manage_subtitles_sheet.dart';
 import 'package:echo_loop/features/auth/providers/auth_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,6 +58,7 @@ void main() {
       AppSettingsState appSettingsState = const AppSettingsState(
         locale: Locale('en'),
       ),
+      Future<TranscriptDecodeResult?> Function()? transcriptContentPicker,
       List<Override> extraOverrides = const [],
     }) {
       final libraryState = AudioLibraryState(audioItems: [audioItem]);
@@ -60,7 +69,10 @@ void main() {
               showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
-                builder: (_) => ManageSubtitlesSheet(audioItem: audioItem),
+                builder: (_) => ManageSubtitlesSheet(
+                  audioItem: audioItem,
+                  transcriptContentPicker: transcriptContentPicker,
+                ),
               );
             },
             child: const Text('Open'),
@@ -101,6 +113,10 @@ void main() {
       );
     }
 
+    setUp(() {
+      AppLogger.instance.clear();
+    });
+
     group('初始状态', () {
       testWidgets('无字幕音频：显示两个 Radio 选项，无删除按钮', (tester) async {
         final item = createTestAudioItem(transcriptPath: null);
@@ -116,7 +132,7 @@ void main() {
         expect(find.text('Cloud Transcription'), findsOneWidget);
 
         // 无删除按钮
-        expect(find.byTooltip('Delete Subtitle'), findsNothing);
+        expect(find.byTooltip('Delete Subtitles'), findsNothing);
       });
 
       testWidgets('有本地字幕音频：显示编辑和红色删除按钮', (tester) async {
@@ -131,11 +147,11 @@ void main() {
 
         // 标题栏右侧依次显示编辑和删除按钮。
         expect(find.byTooltip('Edit subtitles'), findsOneWidget);
-        expect(find.byTooltip('Delete Subtitle'), findsOneWidget);
+        expect(find.byTooltip('Delete Subtitles'), findsOneWidget);
 
         final deleteButton = tester.widget<IconButton>(
           find.descendant(
-            of: find.byTooltip('Delete Subtitle'),
+            of: find.byTooltip('Delete Subtitles'),
             matching: find.byType(IconButton),
           ),
         );
@@ -193,7 +209,7 @@ void main() {
 
         // FilledButton 显示"上传字幕"
         expect(
-          find.widgetWithText(FilledButton, 'Upload Transcript'),
+          find.widgetWithText(FilledButton, 'Upload Subtitles'),
           findsOneWidget,
         );
       });
@@ -209,12 +225,12 @@ void main() {
         await tester.pumpAndSettle();
 
         // 点击删除图标按钮
-        await tester.tap(find.byTooltip('Delete Subtitle'));
+        await tester.tap(find.byTooltip('Delete Subtitles'));
         await tester.pumpAndSettle();
 
         // 确认对话框出现
         expect(
-          find.text('Are you sure you want to delete the subtitle?'),
+          find.text('Are you sure you want to delete the subtitles?'),
           findsOneWidget,
         );
         expect(find.text('Cancel'), findsOneWidget);
@@ -231,7 +247,7 @@ void main() {
         await tester.tap(find.text('Open'));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byTooltip('Delete Subtitle'));
+        await tester.tap(find.byTooltip('Delete Subtitles'));
         await tester.pumpAndSettle();
 
         // 点击取消
@@ -239,7 +255,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // 删除按钮仍在（状态不变）
-        expect(find.byTooltip('Delete Subtitle'), findsOneWidget);
+        expect(find.byTooltip('Delete Subtitles'), findsOneWidget);
       });
 
       testWidgets('AI(en) 已转录 + 选中 auto → 按钮可点击', (tester) async {
@@ -295,11 +311,21 @@ void main() {
         expect(find.text('Sign in to use AI transcription'), findsNothing);
       });
 
-      testWidgets('AI 转录音频过长时在弹窗内显示 5 秒错误提示', (tester) async {
+      testWidgets('AI 转录读取远程时长限制并在弹窗内显示错误提示', (tester) async {
         final item = createTestAudioItem(
-          totalDuration: 31 * 60,
+          totalDuration: 2 * 60,
         ).copyWith(transcriptSource: TranscriptSource.local);
-        await tester.pumpWidget(buildSheet(item, session: signedInSession()));
+        await tester.pumpWidget(
+          buildSheet(
+            item,
+            session: signedInSession(),
+            extraOverrides: [
+              remoteTranscriptionLimitsProvider.overrideWithValue(
+                const RemoteTranscriptionLimits(maxDurationSeconds: 60),
+              ),
+            ],
+          ),
+        );
         await tester.pumpAndSettle();
 
         await tester.tap(find.text('Open'));
@@ -314,13 +340,126 @@ void main() {
         );
         await tester.pump();
 
-        expect(find.textContaining('Audio too long'), findsOneWidget);
+        expect(
+          find.textContaining('Audio too long (max 1 minutes)'),
+          findsOneWidget,
+        );
         expect(find.byType(SnackBar), findsNothing);
 
-        await tester.pump(const Duration(seconds: 5));
+        await tester.pump(const Duration(seconds: 12));
         await tester.pumpAndSettle();
 
         expect(find.textContaining('Audio too long'), findsNothing);
+      });
+
+      testWidgets('大文件预压缩时显示音频压缩中状态', (tester) async {
+        final item = createTestAudioItem();
+        await tester.pumpWidget(
+          buildSheet(
+            item,
+            extraOverrides: [
+              transcriptionTaskManagerProvider.overrideWith(
+                () => TestTranscriptionTaskManager({
+                  item.id: const TranscriptionCompressing(),
+                }),
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Open'));
+        // 压缩态的进度条是不定态动画，不能等待 settle。
+        await tester.pump();
+
+        expect(find.text('Compressing audio...'), findsOneWidget);
+        expect(find.byIcon(Icons.compress), findsOneWidget);
+      });
+
+      testWidgets('本地上传失败时完整显示错误并写入日志', (tester) async {
+        const failurePath =
+            '/private/var/mobile/Containers/Shared/AppGroup/subtitle.srt';
+        final item = createTestAudioItem(transcriptPath: null);
+        await tester.pumpWidget(
+          buildSheet(
+            item,
+            transcriptContentPicker: () async =>
+                throw const FileSystemException(
+                  'Operation not permitted',
+                  failurePath,
+                  OSError('Permission denied', 1),
+                ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Local Upload'));
+        await tester.pumpAndSettle();
+
+        await runZoned<Future<void>>(() async {
+          await tester.tap(
+            find.widgetWithText(FilledButton, 'Upload Subtitles'),
+          );
+          await tester.pump();
+        }, zoneSpecification: ZoneSpecification(print: (_, _, _, _) {}));
+
+        expect(find.textContaining(failurePath), findsOneWidget);
+        expect(find.textContaining('Operation not permitted'), findsOneWidget);
+
+        final logLines = AppLogger.instance.entries.map((e) => e.toString());
+        expect(
+          logLines,
+          contains(
+            allOf(
+              contains('[SubtitleUpload] failed local upload'),
+              contains('errorType=FileSystemException'),
+              contains(failurePath),
+            ),
+          ),
+        );
+
+        await tester.pump(const Duration(seconds: 12));
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('本地上传成功时日志记录解码字符集', (tester) async {
+        final item = createTestAudioItem(transcriptPath: null);
+        await tester.pumpWidget(
+          buildSheet(
+            item,
+            transcriptContentPicker: () async => const TranscriptDecodeResult(
+              text: '1\n00:00:00,000 --> 00:00:01,000\n你好\n',
+              charset: 'gb18030',
+            ),
+            extraOverrides: [
+              audioItemDaoProvider.overrideWithValue(TestAudioItemDao()),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Local Upload'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.widgetWithText(FilledButton, 'Upload Subtitles'));
+        await tester.pumpAndSettle();
+
+        final logLines = AppLogger.instance.entries.map((e) => e.toString());
+        expect(
+          logLines,
+          contains(
+            allOf(
+              contains('[SubtitleUpload] picked transcript'),
+              contains('charset=gb18030'),
+            ),
+          ),
+        );
       });
     });
 
@@ -335,13 +474,13 @@ void main() {
         await tester.tap(find.text('Open'));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byTooltip('Delete Subtitle'));
+        await tester.tap(find.byTooltip('Delete Subtitles'));
         await tester.pumpAndSettle();
 
         // 显示收藏句子删除警告
         expect(
           find.text(
-            'Deleting the subtitle will also clear all bookmarked sentences and learning progress for this audio.',
+            'Deleting the subtitles will also clear all saved sentences and learning progress of this audio.',
           ),
           findsOneWidget,
         );

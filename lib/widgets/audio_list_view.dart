@@ -104,6 +104,18 @@ class AudioListView extends ConsumerStatefulWidget {
   /// 需要独立 sort state 的场景）。
   final AudioSortType? overrideSortType;
 
+  /// 是否处于多选模式（合集详情页批量删除）。默认关闭，库/播客场景零影响。
+  final bool selectionMode;
+
+  /// 多选模式下已选中的音频 id 集合。
+  final Set<String> selectedIds;
+
+  /// 长按某项时回调 —— 进入多选并选中该 id（由外层注入）。
+  final ValueChanged<String>? onEnterSelection;
+
+  /// 多选模式下点击某项时回调 —— 切换该 id 选中态（由外层注入）。
+  final ValueChanged<String>? onToggleSelection;
+
   const AudioListView({
     super.key,
     this.items,
@@ -113,6 +125,10 @@ class AudioListView extends ConsumerStatefulWidget {
     this.guideLeadingItems = false,
     this.guideEnabled = true,
     this.overrideSortType,
+    this.selectionMode = false,
+    this.selectedIds = const {},
+    this.onEnterSelection,
+    this.onToggleSelection,
   });
 
   @override
@@ -174,6 +190,14 @@ class _AudioListViewState extends ConsumerState<AudioListView> {
               _showManageCollectionsSheet(context, item.id),
           onManageTags: () => _showManageTagsSheet(context, item.id),
           onDelete: () => _confirmDeleteAudio(context, ref, item),
+          selectionMode: widget.selectionMode,
+          selected: widget.selectedIds.contains(item.id),
+          onLongPress: widget.onEnterSelection == null
+              ? null
+              : () => widget.onEnterSelection!(item.id),
+          onSelectToggle: widget.onToggleSelection == null
+              ? null
+              : () => widget.onToggleSelection!(item.id),
         );
         return tile;
       },
@@ -370,7 +394,7 @@ class _DeleteFromCollectionDialogState
           ),
           const SizedBox(height: 12),
           // 彻底删除选项：紧凑的可点整行，默认值见 initState。
-          _PermanentlyDeleteOption(
+          PermanentlyDeleteOption(
             value: _permanently,
             onChanged: (v) => setState(() => _permanently = v),
           ),
@@ -403,15 +427,21 @@ class _DeleteFromCollectionDialogState
 
 /// 「彻底删除该音频」紧凑选项行。
 ///
-/// 整行可点切换，左侧小复选框，右侧标题 + 弱化说明，风格与 app 内其它弹窗一致。
-class _PermanentlyDeleteOption extends StatelessWidget {
-  const _PermanentlyDeleteOption({
+/// 整行可点切换，左侧小复选框，右侧标题，风格与 app 内其它删除弹窗一致。
+/// 单条删除与合集批量删除共用，[label] 为空时用单条默认文案。
+class PermanentlyDeleteOption extends StatelessWidget {
+  const PermanentlyDeleteOption({
+    super.key,
     required this.value,
     required this.onChanged,
+    this.label,
   });
 
   final bool value;
   final ValueChanged<bool> onChanged;
+
+  /// 选项文案，为空时回退到单条删除文案 `permanentlyDeleteAudio`。
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -447,7 +477,7 @@ class _PermanentlyDeleteOption extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  l10n.permanentlyDeleteAudio,
+                  label ?? l10n.permanentlyDeleteAudio,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: accent,
                     fontWeight: FontWeight.w600,

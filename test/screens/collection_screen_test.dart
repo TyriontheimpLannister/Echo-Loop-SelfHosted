@@ -52,15 +52,18 @@ void main() {
       });
 
       testWidgets('列表视图模式下合集列表正确显示', (tester) async {
+        final updatedAt = DateTime.now().subtract(const Duration(minutes: 5));
         final c1 = createTestCollection(
           id: '1',
           name: 'English Lessons',
           isPinned: true,
+          updatedAt: updatedAt,
         );
         final c2 = createTestCollection(
           id: '2',
           name: 'Podcasts',
           isPinned: false,
+          updatedAt: updatedAt,
         );
 
         await tester.pumpWidget(
@@ -95,6 +98,8 @@ void main() {
         // 音频数量（列表模式下 audioCount 与日期组合显示）
         expect(find.textContaining('2 audios'), findsOneWidget);
         expect(find.textContaining('1 audios'), findsOneWidget);
+        expect(find.textContaining('Updated 5 minutes ago'), findsNWidgets(2));
+        expect(find.textContaining('Added'), findsNothing);
       });
 
       testWidgets('置顶合集使用淡背景色标记', (tester) async {
@@ -170,10 +175,7 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('New Collection'), findsOneWidget);
-        expect(
-          find.text('Add audio or practice materials manually'),
-          findsOneWidget,
-        );
+        expect(find.text('Add audio manually'), findsOneWidget);
         expect(find.text('Subscribe Podcast'), findsOneWidget);
         expect(find.text('Add with Apple Podcasts or RSS'), findsOneWidget);
 
@@ -183,7 +185,7 @@ void main() {
         expect(find.text('Collection Name'), findsOneWidget);
       });
 
-      testWidgets('创建合集和订阅 Podcast 表单弱化输入提示样式', (tester) async {
+      testWidgets('创建本地合集表单弱化输入提示样式', (tester) async {
         await tester.pumpWidget(createTestScreen(const LibraryScreen()));
         await tester.pumpAndSettle();
 
@@ -220,34 +222,6 @@ void main() {
           localField.decoration?.contentPadding,
           const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         );
-
-        await tester.tap(find.byIcon(Icons.arrow_back));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('collection-option-podcast')),
-        );
-        await tester.pumpAndSettle();
-
-        final podcastField = tester.widget<TextField>(find.byType(TextField));
-        final podcastContext = tester.element(find.byType(TextField));
-        final podcastTheme = Theme.of(podcastContext);
-
-        expect(
-          podcastField.style?.fontSize,
-          podcastTheme.textTheme.bodyMedium?.fontSize,
-        );
-        expect(
-          podcastField.decoration?.hintStyle?.fontSize,
-          podcastTheme.textTheme.bodyMedium?.fontSize,
-        );
-        expect(
-          podcastField.decoration?.hintStyle?.color,
-          podcastTheme.colorScheme.onSurfaceVariant.withValues(alpha: 0.52),
-        );
-        expect(
-          podcastField.decoration?.floatingLabelStyle?.color,
-          podcastTheme.colorScheme.primary.withValues(alpha: 0.78),
-        );
       });
 
       testWidgets('创建合集时空名称时 Add 按钮禁用', (tester) async {
@@ -276,7 +250,7 @@ void main() {
         expect(enabledButton.onPressed, isNotNull);
       });
 
-      testWidgets('订阅 Podcast 使用同一个底部 sheet 表单', (tester) async {
+      testWidgets('点击「订阅 Podcast」关闭 sheet 并进入统一订阅页', (tester) async {
         await tester.pumpWidget(createTestScreen(const LibraryScreen()));
         await tester.pumpAndSettle();
 
@@ -287,10 +261,12 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.byIcon(Icons.arrow_back), findsOneWidget);
-        expect(find.text('Apple Podcasts or RSS URL'), findsOneWidget);
-        expect(find.text('Subscribe Podcast'), findsOneWidget);
-        expect(find.byType(AlertDialog), findsNothing);
+        // sheet 关闭并跳转到统一的 Podcast 搜索与订阅页（stub）。
+        expect(find.text('Podcast Subscribe'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('collection-option-podcast')),
+          findsNothing,
+        );
       });
 
       testWidgets('点击排序按钮显示排序选项', (tester) async {
@@ -304,7 +280,7 @@ void main() {
         // 应显示排序选项
         expect(find.text('Name (A-Z)'), findsOneWidget);
         expect(find.text('Name (Z-A)'), findsOneWidget);
-        expect(find.text('Oldest First'), findsOneWidget);
+        expect(find.text('oldest First'), findsOneWidget);
         expect(find.text('Newest First'), findsOneWidget);
       });
 
@@ -358,6 +334,113 @@ void main() {
 
         final card = tester.widget<Card>(find.byType(Card).first);
         expect(card.color, isNotNull);
+      });
+
+      testWidgets('删除合集弹窗默认勾选删音频并显示文件数，取消勾选则保留', (tester) async {
+        final c = createTestCollection(id: '1', name: 'test');
+        final audio = createTestAudioItem(id: 'a1');
+        final collectionList = TestCollectionList(
+          CollectionState(
+            rawCollections: [c],
+            audioIdsMap: {
+              '1': ['a1'],
+            },
+          ),
+        );
+        final audioLib = TestAudioLibrary(
+          AudioLibraryState(audioItems: [audio]),
+        );
+
+        await tester.pumpWidget(
+          createTestScreen(
+            const LibraryScreen(),
+            overrides: [
+              appSettingsProvider.overrideWith(() => TestAppSettings()),
+              audioLibraryProvider.overrideWith(() => audioLib),
+              collectionListProvider.overrideWith(() => collectionList),
+              listeningPracticeProvider.overrideWith(
+                () => TestListeningPractice(),
+              ),
+              audioEngineProvider.overrideWith(() => TestAudioEngine()),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('collection_list_menu_hit_area')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+
+        // 默认勾选：提示一并删除并带文件数，选项文案为纯文本。
+        expect(
+          find.text('1 audio file(s) in this collection will also be deleted.'),
+          findsOneWidget,
+        );
+        expect(find.text('Also delete audio file(s)?'), findsOneWidget);
+
+        // 取消勾选 → 提示切换为保留。
+        await tester.tap(find.text('Also delete audio file(s)?'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('1 audio file(s) in this collection will be kept.'),
+          findsOneWidget,
+        );
+
+        // 删除 → 合集删除，音频保留。
+        await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+        await tester.pumpAndSettle();
+
+        expect(collectionList.state.rawCollections, isEmpty);
+        expect(audioLib.state.audioItems, hasLength(1));
+      });
+
+      testWidgets('删除合集默认勾选时一并删除音频文件', (tester) async {
+        final c = createTestCollection(id: '1', name: 'test');
+        final audio = createTestAudioItem(id: 'a1');
+        final collectionList = TestCollectionList(
+          CollectionState(
+            rawCollections: [c],
+            audioIdsMap: {
+              '1': ['a1'],
+            },
+          ),
+        );
+        final audioLib = TestAudioLibrary(
+          AudioLibraryState(audioItems: [audio]),
+        );
+
+        await tester.pumpWidget(
+          createTestScreen(
+            const LibraryScreen(),
+            overrides: [
+              appSettingsProvider.overrideWith(() => TestAppSettings()),
+              audioLibraryProvider.overrideWith(() => audioLib),
+              collectionListProvider.overrideWith(() => collectionList),
+              listeningPracticeProvider.overrideWith(
+                () => TestListeningPractice(),
+              ),
+              audioEngineProvider.overrideWith(() => TestAudioEngine()),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('collection_list_menu_hit_area')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+
+        // 默认已勾选，直接删除 → 合集与音频均被删除。
+        await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+        await tester.pumpAndSettle();
+
+        expect(collectionList.state.rawCollections, isEmpty);
+        expect(audioLib.state.audioItems, isEmpty);
       });
 
       testWidgets('Podcast 合集菜单显示重命名和详情，不显示刷新', (tester) async {

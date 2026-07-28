@@ -16,9 +16,11 @@ void main() {
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('app_logger_test');
     logPath = '${tempDir.path}/app.log';
+    AppLogger.instance.clear();
   });
 
   tearDown(() {
+    AppLogger.instance.clear();
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });
 
@@ -43,21 +45,46 @@ void main() {
   });
 
   test('超过上限时启动只保留尾部', () async {
-    // 预置一个超大日志文件（> 512KB）。
+    // 预置一个超大日志文件（> 5MB）。
     final big = StringBuffer();
-    for (var i = 0; i < 60000; i++) {
+    for (var i = 0; i < 220000; i++) {
       big.writeln('11:11:11.111 [Old] line $i');
     }
     File(logPath).writeAsStringSync(big.toString());
-    expect(File(logPath).lengthSync(), greaterThan(512 * 1024));
+    expect(File(logPath).lengthSync(), greaterThan(5 * 1024 * 1024));
 
     await AppLogger.initFileSink(logPath);
 
     final after = File(logPath).readAsStringSync();
-    expect(after.length, lessThan(512 * 1024));
+    expect(after.length, lessThan(5 * 1024 * 1024));
     expect(after, startsWith('--- 日志已截断，保留尾部 ---'));
     // 截断后应保留最近的行，丢弃最早的行。
-    expect(after, contains('line 59999'));
+    expect(after, contains('line 219999'));
     expect(after, isNot(contains('line 0\n')));
+  });
+
+  test('启动时从落盘日志恢复最近的内存日志', () async {
+    final old = StringBuffer();
+    for (var i = 0; i < 510; i++) {
+      old.writeln('12:00:00.000 [Persisted] line $i');
+    }
+    File(logPath).writeAsStringSync(old.toString());
+
+    await AppLogger.initFileSink(logPath);
+
+    final entries = AppLogger.instance.entries;
+    expect(entries, hasLength(500));
+    expect(entries.first.message, 'line 10');
+    expect(entries.last.message, 'line 509');
+  });
+
+  test('clear 同时清空落盘日志', () async {
+    await AppLogger.initFileSink(logPath);
+    AppLogger.log('Test', 'to clear');
+
+    AppLogger.instance.clear();
+
+    expect(AppLogger.instance.entries, isEmpty);
+    expect(File(logPath).readAsStringSync(), isEmpty);
   });
 }

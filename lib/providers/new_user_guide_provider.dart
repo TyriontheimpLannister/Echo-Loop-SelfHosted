@@ -2,6 +2,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../features/onboarding_survey/providers/onboarding_survey_provider.dart'
+    show sharedPreferencesProvider;
 import '../services/app_logger.dart';
 
 /// 页面级引导流程的运行状态。
@@ -28,6 +30,12 @@ class GuideRegistry {
   Future<SharedPreferences> get _preferences async =>
       _prefs ?? SharedPreferences.getInstance();
 
+  /// 新手引导总开关的 SP key。
+  ///
+  /// 与各 flow 的 `guide_v1_<id>_seen` 独立：关闭后 Host 直接不启动任何 flow，
+  /// 但已 seen 状态保留（重新开启不会重复弹已看过的引导，需「重置」才重播）。
+  static const enabledKey = 'guide_enabled';
+
   String keyFor(String flowId) => 'guide_v1_${flowId}_seen';
 
   Future<bool> isSeen(String flowId) async {
@@ -53,6 +61,37 @@ class GuideRegistry {
 final guideRegistryProvider = Provider<GuideRegistry>((ref) {
   return GuideRegistry();
 });
+
+/// 新手引导总开关（默认开启）。
+///
+/// 同步从复用的 [sharedPreferencesProvider] 快照读初值，写回时持久化到
+/// [GuideRegistry.enabledKey]。作为「是否允许弹引导」的单一来源：
+/// - [GuideFlowSequenceHost] 启动 flow 前读此值，关闭时直接跳过；
+/// - 学习设置页据此渲染开关与「重置」入口。
+class GuideEnabledNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    final prefs = ref.read(sharedPreferencesProvider);
+    return prefs.getBool(GuideRegistry.enabledKey) ?? true;
+  }
+
+  /// 切换新手引导总开关，持久化到 SP。
+  Future<void> setEnabled(bool enabled) async {
+    if (state == enabled) return;
+    state = enabled;
+    try {
+      final prefs = ref.read(sharedPreferencesProvider);
+      await prefs.setBool(GuideRegistry.enabledKey, enabled);
+      AppLogger.log('Guide', 'setEnabled=$enabled');
+    } catch (e) {
+      AppLogger.log('Guide', 'setEnabled 写 SP 失败: $e');
+    }
+  }
+}
+
+final guideEnabledProvider = NotifierProvider<GuideEnabledNotifier, bool>(
+  GuideEnabledNotifier.new,
+);
 
 /// 是否"首次启动"。
 ///

@@ -1,0 +1,163 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:echo_loop/screens/log_viewer_screen.dart';
+import 'package:echo_loop/services/app_logger.dart';
+import 'package:echo_loop/services/device_diagnostics_service.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:share_plus/share_plus.dart';
+
+const _shareButtonKey = ValueKey('log_viewer_share_button');
+
+class _FakePathProvider extends PathProviderPlatform {
+  _FakePathProvider(this.tempPath);
+
+  final String tempPath;
+
+  @override
+  Future<String?> getTemporaryPath() async => tempPath;
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  const deviceInfoChannel = DeviceDiagnosticsService.channel;
+
+  late Directory tempDir;
+  late String logPath;
+  late List<String> sharedPaths;
+  late List<String?> sharedSubjects;
+  late List<Rect?> sharedOrigins;
+  late List<String?> sharedMimeTypes;
+
+  setUp(() async {
+    tempDir = Directory.systemTemp.createTempSync('log_viewer_test_');
+    logPath = '${tempDir.path}/app.log';
+    sharedPaths = <String>[];
+    sharedSubjects = <String?>[];
+    sharedOrigins = <Rect?>[];
+    sharedMimeTypes = <String?>[];
+    PathProviderPlatform.instance = _FakePathProvider(tempDir.path);
+    AppLogger.instance.clear();
+    await AppLogger.initFileSink(logPath);
+    PackageInfo.setMockInitialValues(
+      appName: 'Echo Loop',
+      packageName: 'app.echoloop',
+      version: '1.2.3',
+      buildNumber: '45',
+      buildSignature: '',
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(deviceInfoChannel, (call) async {
+          return <String, Object?>{
+            'manufacturer': 'Apple',
+            'model': 'iPhone16,2',
+            'systemVersion': '18.5',
+          };
+        });
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(deviceInfoChannel, null);
+    AppLogger.instance.clear();
+    if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+  });
+
+  Future<ShareResult> captureShare(
+    List<XFile> files, {
+    String? subject,
+    String? text,
+    Rect? sharePositionOrigin,
+    List<String>? fileNameOverrides,
+  }) async {
+    sharedSubjects.add(subject);
+    sharedOrigins.add(sharePositionOrigin);
+    sharedMimeTypes.add(files.single.mimeType);
+    sharedPaths.add(files.single.path);
+    return const ShareResult('success', ShareResultStatus.success);
+  }
+
+  testWidgets('进入页面追加设备信息日志并显示分享按钮', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: LogViewerScreen()));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.byIcon(Icons.ios_share), findsOneWidget);
+    expect(find.byKey(_shareButtonKey), findsOneWidget);
+    expect(find.byIcon(Icons.copy), findsNothing);
+    expect(
+      AppLogger.instance.entries.any(
+        (entry) =>
+            entry.tag == 'DeviceInfo' &&
+            entry.message.contains('model=iPhone16,2'),
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets('点击分享导出包含设备信息和日志内容的 .log 文件', (tester) async {
+    AppLogger.log('Manual', 'before share');
+    await tester.pumpWidget(
+      MaterialApp(home: LogViewerScreen(shareLauncher: captureShare)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    final shareButton = tester.widget<IconButton>(find.byKey(_shareButtonKey));
+    expect(shareButton.onPressed, isNotNull);
+
+    await tester.runAsync(() async {
+      shareButton.onPressed!();
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    });
+    await tester.pump();
+
+    expect(sharedPaths, hasLength(1));
+    expect(sharedSubjects.single, 'Echo Loop Logs');
+    expect(sharedOrigins.single, isNotNull);
+    expect(sharedMimeTypes.single, 'text/plain');
+    expect(sharedPaths.single, endsWith('.log'));
+    expect(sharedPaths.single, contains('log_export_'));
+
+    final exported = File(sharedPaths.single).readAsStringSync();
+    expect(exported, contains('[Manual] before share'));
+    expect(exported, contains('[DeviceInfo]'));
+    expect(exported, contains('model=iPhone16,2'));
+  });
+
+  testWidgets('分享前等待设备信息写入完成', (tester) async {
+    final completer = Completer<Map<String, Object?>>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          deviceInfoChannel,
+          (call) => completer.future,
+        );
+    AppLogger.log('Manual', 'fast tap');
+
+    await tester.pumpWidget(
+      MaterialApp(home: LogViewerScreen(shareLauncher: captureShare)),
+    );
+    await tester.pump();
+    final shareButton = tester.widget<IconButton>(find.byKey(_shareButtonKey));
+    expect(shareButton.onPressed, isNotNull);
+    await tester.runAsync(() async {
+      shareButton.onPressed!();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    expect(sharedPaths, isEmpty);
+
+    completer.complete(<String, Object?>{'model': 'DelayedPhone'});
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    });
+    await tester.pump();
+
+    expect(sharedPaths, hasLength(1));
+    final exported = File(sharedPaths.single).readAsStringSync();
+    expect(exported, contains('DelayedPhone'));
+  });
+}

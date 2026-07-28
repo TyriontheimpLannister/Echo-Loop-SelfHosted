@@ -10,20 +10,24 @@ library;
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kDebugMode, kIsWeb, visibleForTesting;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 import '../../../config/client_distribution.dart';
+import '../../../config/paddle_config.dart';
 import '../../../config/revenuecat_config.dart';
-import '../../../config/web_purchase_config.dart';
 import '../../../services/app_logger.dart';
 import '../models/entitlement.dart';
+import '../models/entitlement_source.dart';
 import '../models/subscription_plan.dart';
+import '../providers/subscription_identity.dart';
 import 'local_storekit_purchase_service.dart';
+import 'paddle_billing_repository.dart';
+import 'paddle_purchase_service.dart';
 import 'purchase_service.dart';
-import 'web_purchase_service.dart';
 
 class RevenueCatPurchaseService implements PurchaseService {
   RevenueCatPurchaseService({String entitlementId = revenueCatEntitlementId})
@@ -99,7 +103,7 @@ class RevenueCatPurchaseService implements PurchaseService {
   @override
   Future<Entitlement> currentEntitlement() async {
     final info = await Purchases.getCustomerInfo();
-    return _entitlementFrom(info);
+    return _entitlementFrom(info, stage: 'currentEntitlement');
   }
 
   @override
@@ -107,7 +111,7 @@ class RevenueCatPurchaseService implements PurchaseService {
     // 把 RevenueCat 的 CustomerInfo 更新监听桥接成 Entitlement 流。
     final controller = StreamController<Entitlement>();
     void listener(CustomerInfo info) {
-      controller.add(_entitlementFrom(info));
+      controller.add(_entitlementFrom(info, stage: 'customerInfoUpdate'));
     }
 
     Purchases.addCustomerInfoUpdateListener(listener);
@@ -137,7 +141,7 @@ class RevenueCatPurchaseService implements PurchaseService {
     try {
       final result = await Purchases.purchase(PurchaseParams.package(package));
       AppLogger.log('Subscription', 'RC purchase 完成: 交易成功，开始映射权益');
-      return _entitlementFrom(result.customerInfo);
+      return _entitlementFrom(result.customerInfo, stage: 'purchase:result');
     } on PlatformException catch (e) {
       final code = PurchasesErrorHelper.getErrorCode(e);
       if (code == PurchasesErrorCode.purchaseCancelledError) {
@@ -149,15 +153,23 @@ class RevenueCatPurchaseService implements PurchaseService {
   }
 
   @override
-  Future<Entitlement> restore() async {
+  Future<RestorePurchaseResult> restore() async {
     AppLogger.log('Subscription', 'RC restorePurchases 发起');
     try {
       final info = await Purchases.restorePurchases();
-      return _entitlementFrom(info);
+      return RestorePurchaseResult(
+        entitlement: _entitlementFrom(info, stage: 'restore:result'),
+        originalAppUserId: info.originalAppUserId,
+      );
     } on PlatformException catch (e) {
       final code = PurchasesErrorHelper.getErrorCode(e);
       if (code == PurchasesErrorCode.purchaseCancelledError) {
         throw PurchaseException('用户取消恢复', cancelled: true);
+      }
+      if (code == PurchasesErrorCode.receiptAlreadyInUseError) {
+        // 收据属其他 RC 订阅者：交由上层回源后端确认真实会员态，不当「购买失败」。
+        AppLogger.log('Subscription', 'restore 收据被占用 msg=${e.message}');
+        throw PurchaseException(e.message ?? '收据已被占用', receiptInUse: true);
       }
       AppLogger.log('Subscription', 'restore 失败 code=$code msg=${e.message}');
       throw PurchaseException(e.message ?? '恢复失败');
@@ -206,10 +218,21 @@ class RevenueCatPurchaseService implements PurchaseService {
       'lookForEntitlementId': _entitlementId,
       'activeEntitlements': info.entitlements.active.keys.toList(),
       'allEntitlements': info.entitlements.all.keys.toList(),
+      'entitlementDetails': info.entitlements.all.values
+          .map(revenueCatEntitlementInfoSnapshot)
+          .toList(),
       'activeSubscriptions': info.activeSubscriptions.toList(),
+      'allPurchasedProductIdentifiers': info.allPurchasedProductIdentifiers
+          .toList(),
+      'allExpirationDates': info.allExpirationDates,
+      'allPurchaseDates': info.allPurchaseDates,
       'originalAppUserId': info.originalAppUserId,
+      'firstSeen': info.firstSeen,
+      'requestDate': info.requestDate,
       'managementURL': info.managementURL,
       'latestExpirationDate': info.latestExpirationDate,
+      'originalPurchaseDate': info.originalPurchaseDate,
+      'originalApplicationVersion': info.originalApplicationVersion,
     };
   }
 
@@ -471,17 +494,18 @@ class RevenueCatPurchaseService implements PurchaseService {
     }
   }
 
-  Entitlement _entitlementFrom(CustomerInfo info) {
+  Entitlement _entitlementFrom(CustomerInfo info, {required String stage}) {
     final active = info.entitlements.active;
-    // 诊断：打印 RevenueCat 实际返回的 active 权益键 + 全部权益键 + 我们要找的标识。
+    // 诊断：打印 RevenueCat 实际返回的 CustomerInfo 关键字段与 entitlement 明细。
     // 若 activeKeys 为空但 allKeys 也空 → 商品没挂到任何 entitlement；
     // 若 key 与 lookFor 大小写/拼写不一致 → entitlement 标识没对上。
     AppLogger.log(
       'Subscription',
-      'CustomerInfo activeEntitlements=${active.keys.toList()} '
-          'allEntitlements=${info.entitlements.all.keys.toList()} '
-          'lookFor=$_entitlementId '
-          'activeSubs=${info.activeSubscriptions.toList()}',
+      revenueCatCustomerInfoSummary(
+        info,
+        lookForEntitlementId: _entitlementId,
+        stage: stage,
+      ),
     );
     final premium = active[_entitlementId];
     if (premium == null || !premium.isActive) {
@@ -499,15 +523,92 @@ class RevenueCatPurchaseService implements PurchaseService {
           subscriptionPeriodFromProductId(productId),
       expiresAt: expiry != null ? DateTime.tryParse(expiry) : null,
       willRenew: premium.willRenew,
+      source: sourceFromRevenueCatStore(premium.store),
     );
   }
+}
+
+/// 将 RevenueCat 的 [Store] 映射为订阅来源渠道。
+///
+/// App Store / Mac App Store → apple；Play Store → google；Paddle → paddle；
+/// 其余（Stripe / Amazon / 促销 / 未知等）→ unknown，让管理入口回退到按平台渠道。
+@visibleForTesting
+EntitlementSource sourceFromRevenueCatStore(Store store) {
+  switch (store) {
+    case Store.appStore:
+    case Store.macAppStore:
+      return EntitlementSource.apple;
+    case Store.playStore:
+      return EntitlementSource.google;
+    case Store.paddle:
+      return EntitlementSource.paddle;
+    default:
+      return EntitlementSource.unknown;
+  }
+}
+
+/// 生成 RevenueCat CustomerInfo 诊断日志。
+///
+/// 日志包含权益裁决最常用的字段：`expiresAt`、`willRenew`、`productId`、
+/// active entitlement keys、订阅商品、请求时间与 RC 用户标识。保持为纯函数，方便
+/// 单测锁住排障信息，避免 SDK 升级或重构时关键字段被删掉。
+@visibleForTesting
+String revenueCatCustomerInfoSummary(
+  CustomerInfo info, {
+  required String lookForEntitlementId,
+  required String stage,
+}) {
+  final entitlementDetails = info.entitlements.all.values
+      .map(_revenueCatEntitlementInfoSummary)
+      .join(' | ');
+  return 'CustomerInfo[$stage] '
+      'originalAppUserId=${info.originalAppUserId} '
+      'requestDate=${info.requestDate} '
+      'firstSeen=${info.firstSeen} '
+      'latestExpirationDate=${info.latestExpirationDate ?? "null"} '
+      'managementURL=${info.managementURL ?? "null"} '
+      'lookFor=$lookForEntitlementId '
+      'activeEntitlements=${info.entitlements.active.keys.toList()} '
+      'allEntitlements=${info.entitlements.all.keys.toList()} '
+      'activeSubs=${info.activeSubscriptions.toList()} '
+      'allPurchasedProductIds=${info.allPurchasedProductIdentifiers.toList()} '
+      'allExpirationDates=${info.allExpirationDates} '
+      'allPurchaseDates=${info.allPurchaseDates} '
+      'entitlements=${entitlementDetails.isEmpty ? "empty" : entitlementDetails}';
+}
+
+/// 生成单个 RevenueCat entitlement 的结构化调试快照。
+@visibleForTesting
+Map<String, Object?> revenueCatEntitlementInfoSnapshot(EntitlementInfo info) {
+  return {
+    'identifier': info.identifier,
+    'isActive': info.isActive,
+    'willRenew': info.willRenew,
+    'productIdentifier': info.productIdentifier,
+    'productPlanIdentifier': info.productPlanIdentifier,
+    'expirationDate': info.expirationDate,
+    'unsubscribeDetectedAt': info.unsubscribeDetectedAt,
+    'billingIssueDetectedAt': info.billingIssueDetectedAt,
+    'latestPurchaseDate': info.latestPurchaseDate,
+    'originalPurchaseDate': info.originalPurchaseDate,
+    'store': info.store.name,
+    'periodType': info.periodType.name,
+    'ownershipType': info.ownershipType.name,
+    'isSandbox': info.isSandbox,
+    'verification': info.verification.name,
+  };
+}
+
+String _revenueCatEntitlementInfoSummary(EntitlementInfo info) {
+  final snapshot = revenueCatEntitlementInfoSnapshot(info);
+  return '{${snapshot.entries.map((e) => '${e.key}=${e.value ?? "null"}').join(", ")}}';
 }
 
 /// 购买服务 Provider。
 ///
 /// 路由优先级：
 /// 1. [useLocalStoreKit]（本地 StoreKit 测试模式）→ 本地实现，绕开 RevenueCat；
-/// 2. 网页支付渠道（[isWebCheckoutConfigured]，侧载 APK / 桌面）→ [WebPurchaseService]，
+/// 2. direct 渠道（[isPaddleCheckoutConfigured]，侧载 APK / 桌面）→ [PaddlePurchaseService]，
 ///    权益经后端读回；
 /// 3. 已配置 RevenueCat（注入了平台 API Key）→ 真实 RC 实现；
 /// 4. 否则回退 Stub（匿名可运行）。
@@ -517,7 +618,7 @@ final purchaseServiceProvider = Provider<PurchaseService>((ref) {
     channel: clientPaymentChannel,
     useLocalStoreKit: useLocalStoreKit,
     nativeStoreConfigured: isRevenueCatConfigured,
-    webConfigured: isWebCheckoutConfigured,
+    webConfigured: isPaddleCheckoutConfigured,
   );
   if (serviceType == PurchaseServiceType.localStoreKit) {
     final service = LocalStoreKitPurchaseService();
@@ -525,7 +626,10 @@ final purchaseServiceProvider = Provider<PurchaseService>((ref) {
     return service;
   }
   if (serviceType == PurchaseServiceType.web) {
-    return const WebPurchaseService();
+    return PaddlePurchaseService(
+      repository: ref.read(paddleBillingRepositoryProvider),
+      accessToken: () => ref.read(subscriptionIdentityProvider).accessToken,
+    );
   }
   if (serviceType == PurchaseServiceType.revenueCat) {
     return RevenueCatPurchaseService();

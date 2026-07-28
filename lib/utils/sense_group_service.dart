@@ -89,11 +89,13 @@ class SenseGroupService {
     required int sentenceEndMs,
     List<WordTimestamp>? wordTimestamps,
     CancelToken? cancelToken,
+    bool respectLocalQuotaReset = false,
   }) async* {
     final stream = ai.getSenseGroupsStream(
       text,
       accessToken: accessToken,
       cancelToken: cancelToken,
+      respectLocalQuotaReset: respectLocalQuotaReset,
     );
     await for (final result in stream) {
       final timings = computeTimings(

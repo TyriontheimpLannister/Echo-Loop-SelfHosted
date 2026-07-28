@@ -33,6 +33,10 @@ abstract final class LearningSettingsKeys {
   static const autoSkipRetell = 'learning_auto_skip_retell';
   static const autoExpandCachedAnnotation =
       'learning_auto_expand_cached_annotation';
+  static const autoShowAiExplanation = 'learning_auto_show_ai_explanation';
+  static const autoShowAiAnalysis = 'learning_auto_show_ai_analysis';
+  static const autoShowAiTranslation = 'learning_auto_show_ai_translation';
+  static const autoShowAiSenseGroups = 'learning_auto_show_ai_sense_groups';
   static const autoPlayRetellRecordingAfterCompletion =
       'learning_auto_play_retell_recording_after_completion';
   static const listenAndRepeatRatingEnabled =
@@ -58,6 +62,18 @@ class LearningSettings {
   /// 是否自动展开缓存的解析/翻译/意群（默认 true）。
   final bool autoExpandCachedAnnotation;
 
+  /// 是否自动显示 AI 讲解（默认 true）。
+  final bool autoShowAiExplanation;
+
+  /// 是否自动显示句子解析（默认 true）。
+  final bool autoShowAiAnalysis;
+
+  /// 是否自动显示句子翻译（默认 true）。
+  final bool autoShowAiTranslation;
+
+  /// 是否自动显示意群分割（默认 false）。
+  final bool autoShowAiSenseGroups;
+
   /// 复述完成后是否自动播放用户录音（默认 false）。
   final bool autoPlayRetellRecordingAfterCompletion;
 
@@ -76,6 +92,10 @@ class LearningSettings {
   const LearningSettings({
     this.autoSkipRetell = false,
     this.autoExpandCachedAnnotation = true,
+    this.autoShowAiExplanation = true,
+    this.autoShowAiAnalysis = true,
+    this.autoShowAiTranslation = true,
+    this.autoShowAiSenseGroups = false,
     this.autoPlayRetellRecordingAfterCompletion = false,
     this.listenAndRepeatRatingEnabled = true,
     this.retellRatingEnabled = true,
@@ -91,6 +111,14 @@ class LearningSettings {
       autoExpandCachedAnnotation:
           prefs.getBool(LearningSettingsKeys.autoExpandCachedAnnotation) ??
           true,
+      autoShowAiExplanation:
+          prefs.getBool(LearningSettingsKeys.autoShowAiExplanation) ?? true,
+      autoShowAiAnalysis:
+          prefs.getBool(LearningSettingsKeys.autoShowAiAnalysis) ?? true,
+      autoShowAiTranslation:
+          prefs.getBool(LearningSettingsKeys.autoShowAiTranslation) ?? true,
+      autoShowAiSenseGroups:
+          prefs.getBool(LearningSettingsKeys.autoShowAiSenseGroups) ?? false,
       autoPlayRetellRecordingAfterCompletion:
           prefs.getBool(
             LearningSettingsKeys.autoPlayRetellRecordingAfterCompletion,
@@ -112,6 +140,10 @@ class LearningSettings {
   LearningSettings copyWith({
     bool? autoSkipRetell,
     bool? autoExpandCachedAnnotation,
+    bool? autoShowAiExplanation,
+    bool? autoShowAiAnalysis,
+    bool? autoShowAiTranslation,
+    bool? autoShowAiSenseGroups,
     bool? autoPlayRetellRecordingAfterCompletion,
     bool? listenAndRepeatRatingEnabled,
     bool? retellRatingEnabled,
@@ -122,6 +154,13 @@ class LearningSettings {
       autoSkipRetell: autoSkipRetell ?? this.autoSkipRetell,
       autoExpandCachedAnnotation:
           autoExpandCachedAnnotation ?? this.autoExpandCachedAnnotation,
+      autoShowAiExplanation:
+          autoShowAiExplanation ?? this.autoShowAiExplanation,
+      autoShowAiAnalysis: autoShowAiAnalysis ?? this.autoShowAiAnalysis,
+      autoShowAiTranslation:
+          autoShowAiTranslation ?? this.autoShowAiTranslation,
+      autoShowAiSenseGroups:
+          autoShowAiSenseGroups ?? this.autoShowAiSenseGroups,
       autoPlayRetellRecordingAfterCompletion:
           autoPlayRetellRecordingAfterCompletion ??
           this.autoPlayRetellRecordingAfterCompletion,
@@ -142,6 +181,10 @@ class LearningSettings {
           runtimeType == other.runtimeType &&
           autoSkipRetell == other.autoSkipRetell &&
           autoExpandCachedAnnotation == other.autoExpandCachedAnnotation &&
+          autoShowAiExplanation == other.autoShowAiExplanation &&
+          autoShowAiAnalysis == other.autoShowAiAnalysis &&
+          autoShowAiTranslation == other.autoShowAiTranslation &&
+          autoShowAiSenseGroups == other.autoShowAiSenseGroups &&
           autoPlayRetellRecordingAfterCompletion ==
               other.autoPlayRetellRecordingAfterCompletion &&
           listenAndRepeatRatingEnabled == other.listenAndRepeatRatingEnabled &&
@@ -154,6 +197,10 @@ class LearningSettings {
   int get hashCode => Object.hash(
     autoSkipRetell,
     autoExpandCachedAnnotation,
+    autoShowAiExplanation,
+    autoShowAiAnalysis,
+    autoShowAiTranslation,
+    autoShowAiSenseGroups,
     autoPlayRetellRecordingAfterCompletion,
     listenAndRepeatRatingEnabled,
     retellRatingEnabled,
@@ -198,6 +245,54 @@ class LearningSettingsNotifier extends Notifier<LearningSettings> {
         'LearningSettings',
         'setAutoExpandCachedAnnotation 写 SP 失败: $e',
       );
+    }
+  }
+
+  /// 切换自动显示 AI 讲解总开关，写 SP + 更新 state。
+  Future<void> setAutoShowAiExplanation(bool enabled) async {
+    if (state.autoShowAiExplanation == enabled) return;
+    state = state.copyWith(autoShowAiExplanation: enabled);
+    try {
+      final prefs = ref.read(sharedPreferencesProvider);
+      await prefs.setBool(LearningSettingsKeys.autoShowAiExplanation, enabled);
+    } catch (e) {
+      AppLogger.log('LearningSettings', 'setAutoShowAiExplanation 写 SP 失败: $e');
+    }
+  }
+
+  /// 切换自动显示解析，写 SP + 更新 state。
+  Future<void> setAutoShowAiAnalysis(bool enabled) async {
+    if (state.autoShowAiAnalysis == enabled) return;
+    state = state.copyWith(autoShowAiAnalysis: enabled);
+    try {
+      final prefs = ref.read(sharedPreferencesProvider);
+      await prefs.setBool(LearningSettingsKeys.autoShowAiAnalysis, enabled);
+    } catch (e) {
+      AppLogger.log('LearningSettings', 'setAutoShowAiAnalysis 写 SP 失败: $e');
+    }
+  }
+
+  /// 切换自动显示翻译，写 SP + 更新 state。
+  Future<void> setAutoShowAiTranslation(bool enabled) async {
+    if (state.autoShowAiTranslation == enabled) return;
+    state = state.copyWith(autoShowAiTranslation: enabled);
+    try {
+      final prefs = ref.read(sharedPreferencesProvider);
+      await prefs.setBool(LearningSettingsKeys.autoShowAiTranslation, enabled);
+    } catch (e) {
+      AppLogger.log('LearningSettings', 'setAutoShowAiTranslation 写 SP 失败: $e');
+    }
+  }
+
+  /// 切换自动显示意群分割，写 SP + 更新 state。
+  Future<void> setAutoShowAiSenseGroups(bool enabled) async {
+    if (state.autoShowAiSenseGroups == enabled) return;
+    state = state.copyWith(autoShowAiSenseGroups: enabled);
+    try {
+      final prefs = ref.read(sharedPreferencesProvider);
+      await prefs.setBool(LearningSettingsKeys.autoShowAiSenseGroups, enabled);
+    } catch (e) {
+      AppLogger.log('LearningSettings', 'setAutoShowAiSenseGroups 写 SP 失败: $e');
     }
   }
 

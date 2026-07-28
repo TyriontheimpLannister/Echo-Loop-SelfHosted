@@ -71,9 +71,19 @@ class PodcastRepository {
 
   /// 通过用户输入的 URL 创建 podcast 合集并完成首次 Feed 拉取。
   ///
+  /// [knownFeedUrl] 用于 Apple 搜索/精选结果已直接拿到 RSS 的场景：
+  /// 原始 [inputUrl] 仍保存为来源链接（通常是 Apple Podcasts），RSS 拉取
+  /// 直接使用 [knownFeedUrl]，避免重复 iTunes lookup。
+  ///
   /// 成功后合集和音频条目（占位，未下载）已入库。
-  Future<Collection> createAndFetch(String inputUrl) async {
-    final feedUrl = await _urlResolver.resolve(inputUrl);
+  Future<Collection> createAndFetch(
+    String inputUrl, {
+    String? knownFeedUrl,
+  }) async {
+    final trimmedKnownFeed = knownFeedUrl?.trim();
+    final feedUrl = trimmedKnownFeed != null && trimmedKnownFeed.isNotEmpty
+        ? trimmedKnownFeed
+        : await _urlResolver.resolve(inputUrl);
 
     // 判重：同一 Feed 已订阅则拒绝创建，提示已有合集名
     final existing = _ref
@@ -177,6 +187,10 @@ class PodcastRepository {
         podcastLastRefreshedAt: refreshedAt,
         clearPodcastLastRefreshError: true,
         podcastMetaJson: jsonEncode(result.meta.toJson()),
+        // 描述随刷新写回：订阅时的 description 可能是旧版清洗逻辑生成（段落被
+        // 压成空格），刷新后用最新 parser 结果覆盖，保持与 podcastMetaJson 同源。
+        // meta 无描述时保留原值，避免被清空。
+        description: result.meta.description ?? collection.description,
         coverUrl: result.meta.imageUrl ?? collection.coverUrl,
         podcastFeedUrl: feed.url,
       );
@@ -201,7 +215,7 @@ class PodcastRepository {
       );
       await _ref
           .read(collectionListProvider.notifier)
-          .updatePodcastCollection(failed);
+          .updatePodcastCollection(failed, touchUpdatedAt: false);
       AppLogger.log(
         'PodcastRefresh',
         'load feed failed collectionId=${collection.id} '

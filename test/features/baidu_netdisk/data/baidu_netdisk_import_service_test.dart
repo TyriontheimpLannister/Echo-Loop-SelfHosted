@@ -1,0 +1,332 @@
+import 'dart:io';
+
+import 'package:dio/dio.dart';
+import 'package:echo_loop/features/audio_import/audio_finalization_service.dart';
+import 'package:echo_loop/features/audio_import/audio_import_models.dart';
+import 'package:echo_loop/features/audio_import/audio_registration_service.dart';
+import 'package:echo_loop/features/baidu_netdisk/data/baidu_credential_repository.dart';
+import 'package:echo_loop/features/baidu_netdisk/data/baidu_netdisk_api.dart';
+import 'package:echo_loop/features/baidu_netdisk/data/baidu_netdisk_import_service.dart';
+import 'package:echo_loop/features/baidu_netdisk/models/baidu_credential_bundle.dart';
+import 'package:echo_loop/features/baidu_netdisk/models/baidu_oauth_session.dart';
+import 'package:echo_loop/features/baidu_netdisk/models/baidu_oauth_session_status.dart';
+import 'package:echo_loop/features/baidu_netdisk/models/cloud_drive_models.dart';
+import 'package:echo_loop/models/audio_item.dart';
+import 'package:echo_loop/providers/audio_library_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+class _FakeCredentialRepository implements BaiduCredentialRepository {
+  _FakeCredentialRepository(this.accessToken);
+
+  String? accessToken;
+
+  @override
+  Future<void> clearCredential() async {
+    accessToken = null;
+  }
+
+  @override
+  Future<BaiduOAuthSession> createSession(BaiduNetdiskPlatform platform) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<BaiduOAuthSessionStatus> fetchStatus(BaiduOAuthSession session) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String?> getValidAccessToken() async => accessToken;
+
+  @override
+  Future<void> persistCompletedSession({
+    required BaiduOAuthSession session,
+    required BaiduCredentialBundle credential,
+  }) async {}
+}
+
+class _FakeBaiduNetdiskApi implements BaiduNetdiskApi {
+  int fetchDownloadLinkCalls = 0;
+  int downloadCalls = 0;
+  String? lastAccessToken;
+  String? lastSavePath;
+  List<int> bytes = const [1, 2, 3, 4];
+  Map<int, List<int>> bytesByFsId = const <int, List<int>>{};
+
+  @override
+  Future<void> downloadToFile({
+    required String accessToken,
+    required String dlink,
+    required String savePath,
+    int? expectedSize,
+    CancelToken? cancelToken,
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+  }) async {
+    downloadCalls += 1;
+    lastAccessToken = accessToken;
+    lastSavePath = savePath;
+    final fsId = int.tryParse(dlink.split('/').last);
+    final content = fsId == null ? bytes : bytesByFsId[fsId] ?? bytes;
+    onProgress?.call(content.length, expectedSize);
+    await File(savePath).writeAsBytes(content);
+  }
+
+  @override
+  Future<BaiduDownloadLink> fetchDownloadLink({
+    required String accessToken,
+    required int fsId,
+  }) async {
+    fetchDownloadLinkCalls += 1;
+    lastAccessToken = accessToken;
+    return BaiduDownloadLink(
+      fsId: fsId,
+      dlink: 'https://d.pcs.baidu.com/file/$fsId',
+      size: (bytesByFsId[fsId] ?? bytes).length,
+    );
+  }
+
+  @override
+  Future<CloudDriveListPage> listDirectory({
+    required String accessToken,
+    String dir = '/',
+    int start = 0,
+    int limit = 100,
+  }) {
+    throw UnimplementedError();
+  }
+}
+
+class _FakeAudioLibrary extends AudioLibrary {
+  _FakeAudioLibrary([this.initialState = const AudioLibraryState()]);
+
+  final AudioLibraryState initialState;
+
+  @override
+  AudioLibraryState build() => initialState;
+
+  @override
+  Future<void> addAudioItem(AudioItem item) async {
+    state = state.copyWith(audioItems: [...state.audioItems, item]);
+  }
+}
+
+void main() {
+  group('DefaultBaiduNetdiskImportService', () {
+    late Directory tempDir;
+    late _FakeCredentialRepository credentialRepository;
+    late _FakeBaiduNetdiskApi api;
+    late DefaultBaiduNetdiskImportService service;
+
+    const entry = CloudDriveEntry(
+      fsId: 42,
+      name: 'Lesson 1.mp3',
+      path: '/英语/Lesson 1.mp3',
+      isDirectory: false,
+      size: 4,
+    );
+    const subtitleEntry = CloudDriveEntry(
+      fsId: 43,
+      name: 'Lesson 1.srt',
+      path: '/英语/Lesson 1.srt',
+      isDirectory: false,
+      size: 45,
+    );
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('baidu-import-test-');
+      credentialRepository = _FakeCredentialRepository('access-token');
+      api = _FakeBaiduNetdiskApi();
+      service = DefaultBaiduNetdiskImportService(
+        credentialRepository: credentialRepository,
+        api: api,
+        resolveDataDir: () async => tempDir,
+        finalizationService: AudioFinalizationService(
+          computeSha256: (_) async => 'sha256',
+        ),
+        registrationService: AudioRegistrationService(
+          readDurationSeconds: (_) async => 12,
+        ),
+      );
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    test('下载百度网盘文件并按 cloudDrive 来源入库', () async {
+      final container = ProviderContainer(
+        overrides: [audioLibraryProvider.overrideWith(_FakeAudioLibrary.new)],
+      );
+      addTearDown(container.dispose);
+      final progresses = <int>[];
+
+      final item = await service.importAudio(
+        entry: entry,
+        audioLibrary: container.read(audioLibraryProvider.notifier),
+        audioLibraryState: container.read(audioLibraryProvider),
+        onProgress: (_, received, _) => progresses.add(received),
+      );
+
+      expect(api.fetchDownloadLinkCalls, 1);
+      expect(api.downloadCalls, 1);
+      expect(api.lastAccessToken, 'access-token');
+      expect(item.name, 'Lesson 1');
+      expect(item.totalDuration, 12);
+      expect(item.importSourceType, AudioImportSourceType.cloudDrive);
+      expect(item.importSourceUrl, contains('baidunetdisk://fs/42'));
+      expect(item.audioPath, 'audios/imported/sha256.mp3');
+      expect(File('${tempDir.path}/${item.audioPath}').existsSync(), isTrue);
+      expect(progresses, [4]);
+    });
+
+    test('未授权时要求重新授权且不下载', () async {
+      credentialRepository.accessToken = null;
+      final container = ProviderContainer(
+        overrides: [audioLibraryProvider.overrideWith(_FakeAudioLibrary.new)],
+      );
+      addTearDown(container.dispose);
+
+      expect(
+        service.importAudio(
+          entry: entry,
+          audioLibrary: container.read(audioLibraryProvider.notifier),
+          audioLibraryState: container.read(audioLibraryProvider),
+        ),
+        throwsA(isA<BaiduReauthorizationRequiredException>()),
+      );
+      expect(api.fetchDownloadLinkCalls, 0);
+      expect(api.downloadCalls, 0);
+    });
+
+    test('目录和不支持格式在导入前被拒绝', () async {
+      final container = ProviderContainer(
+        overrides: [audioLibraryProvider.overrideWith(_FakeAudioLibrary.new)],
+      );
+      addTearDown(container.dispose);
+
+      await expectLater(
+        service.importAudio(
+          entry: const CloudDriveEntry(
+            fsId: 1,
+            name: 'Folder',
+            path: '/Folder',
+            isDirectory: true,
+            size: 0,
+          ),
+          audioLibrary: container.read(audioLibraryProvider.notifier),
+          audioLibraryState: container.read(audioLibraryProvider),
+        ),
+        throwsA(
+          isA<AudioImportException>().having(
+            (error) => error.code,
+            'code',
+            AudioImportFailureCode.unsupportedFormat,
+          ),
+        ),
+      );
+
+      await expectLater(
+        service.importAudio(
+          entry: const CloudDriveEntry(
+            fsId: 2,
+            name: 'notes.txt',
+            path: '/notes.txt',
+            isDirectory: false,
+            size: 5,
+          ),
+          audioLibrary: container.read(audioLibraryProvider.notifier),
+          audioLibraryState: container.read(audioLibraryProvider),
+        ),
+        throwsA(
+          isA<AudioImportException>().having(
+            (error) => error.code,
+            'code',
+            AudioImportFailureCode.unsupportedFormat,
+          ),
+        ),
+      );
+      expect(api.fetchDownloadLinkCalls, 0);
+    });
+
+    test('批量导入区分新增和重复', () async {
+      final existing = AudioItem(
+        id: 'existing',
+        name: 'Existing',
+        audioPath: 'audios/imported/sha256.mp3',
+        addedDate: DateTime(2026, 1, 1),
+        originalAudioSha256: 'sha256',
+        audioSha256: 'sha256',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          audioLibraryProvider.overrideWith(
+            () => _FakeAudioLibrary(AudioLibraryState(audioItems: [existing])),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final itemResults = <CloudDriveImportItemResult>[];
+
+      final outcome = await service.importAudios(
+        entries: [entry],
+        audioLibrary: container.read(audioLibraryProvider.notifier),
+        audioLibraryState: container.read(audioLibraryProvider),
+        onItemResult: itemResults.add,
+      );
+
+      expect(outcome.added, isEmpty);
+      expect(outcome.duplicates, [entry]);
+      expect(outcome.failures, isEmpty);
+      expect(itemResults.single.status, CloudDriveImportItemStatus.duplicate);
+      expect(itemResults.single.entry, entry);
+      expect(itemResults.single.duplicateExistingName, 'Existing');
+      expect(File(api.lastSavePath!).existsSync(), isFalse);
+    });
+
+    test('批量导入时下载并挂载同名字幕', () async {
+      final container = ProviderContainer(
+        overrides: [audioLibraryProvider.overrideWith(_FakeAudioLibrary.new)],
+      );
+      addTearDown(container.dispose);
+      api.bytesByFsId = {
+        entry.fsId: const [1, 2, 3, 4],
+        subtitleEntry.fsId:
+            '1\n00:00:00,000 --> 00:00:01,000\nHello\n'.codeUnits,
+      };
+      final attached = <String, String>{};
+      final itemResults = <CloudDriveImportItemResult>[];
+      service = DefaultBaiduNetdiskImportService(
+        credentialRepository: credentialRepository,
+        api: api,
+        resolveDataDir: () async => tempDir,
+        finalizationService: AudioFinalizationService(
+          computeSha256: (_) async => 'sha256',
+        ),
+        registrationService: AudioRegistrationService(
+          readDurationSeconds: (_) async => 12,
+        ),
+        subtitleImporter: (item, {required text, required ext}) async {
+          attached[item.name] = '$ext:$text';
+        },
+      );
+
+      final outcome = await service.importAudios(
+        entries: [entry],
+        subtitleEntries: [subtitleEntry],
+        audioLibrary: container.read(audioLibraryProvider.notifier),
+        audioLibraryState: container.read(audioLibraryProvider),
+        onItemResult: itemResults.add,
+      );
+
+      expect(outcome.added, [entry]);
+      expect(outcome.addedItems.single.name, 'Lesson 1');
+      expect(itemResults.single.status, CloudDriveImportItemStatus.added);
+      expect(itemResults.single.item?.transcriptSource, TranscriptSource.local);
+      expect(api.downloadCalls, 2);
+      expect(attached['Lesson 1'], contains('srt:1'));
+    });
+  });
+}

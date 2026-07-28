@@ -131,6 +131,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             onPressed: () => showCreateCollectionDialog(context),
           ),
         ),
+        const SizedBox(width: 8),
       ];
     } else {
       return [
@@ -141,6 +142,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           icon: const Icon(Icons.add),
           onPressed: () => showImportAudioSheet(context),
         ),
+        const SizedBox(width: 8),
       ];
     }
   }

@@ -8,6 +8,7 @@ import 'package:universal_io/io.dart';
 import '../../models/audio_item.dart';
 import '../../providers/audio_library_provider.dart';
 import '../../providers/collection_provider.dart';
+import '../../services/app_logger.dart';
 import '../../utils/app_data_dir.dart';
 import '../../utils/audio_duration.dart';
 import 'audio_finalization_service.dart';
@@ -23,6 +24,8 @@ typedef AudioImportProgressCallback =
 /// 负责把外部音频直链下载到应用沙盒并创建普通 [AudioItem]。未来 RSS 解析只需
 /// 把单集 enclosure 规整成直链来源，即可复用本服务。
 class AudioImportService {
+  static const _logTag = 'AudioImport';
+
   AudioImportService({
     Dio? dio,
     Uuid? uuid,
@@ -142,17 +145,20 @@ class AudioImportService {
       );
     }
 
+    final normalizedUri = _normalizePodcastAudioUri(uri);
     final extension =
-        _extensionFromUri(uri) ??
+        _extensionFromUri(normalizedUri) ??
         _extensionFromMimeType(enclosureType) ??
         'mp3';
-    final safeBaseName = _safeFileBaseName(_baseNameFromUri(uri, extension));
+    final safeBaseName = _safeFileBaseName(
+      _baseNameFromUri(normalizedUri, extension),
+    );
 
     final dataDir = await _resolveDataDir();
     final audioId = _uuid.v4();
     final downloadedPath = await _downloadToTemp(
       resolved: ResolvedAudioImport(
-        uri: uri,
+        uri: normalizedUri,
         displayName: safeBaseName,
         fileName: '$safeBaseName.$extension',
         extension: extension,
@@ -295,6 +301,7 @@ class AudioImportService {
           'Audio import canceled',
         );
       }
+      _logDownloadFailure(resolved.uri, e);
       throw AudioImportException(
         AudioImportFailureCode.network,
         'Failed to download audio',
@@ -338,6 +345,35 @@ class AudioImportService {
     final ext = p.extension(uri.path).replaceFirst('.', '').toLowerCase();
     if (ext.isEmpty) return null;
     return ext;
+  }
+
+  /// BBC RSS 历史数据常落库为 HTTP enclosure，而同一 feed 同时提供 HTTPS 版本。
+  /// 下载前在这里做最小兜底，避免 Android cleartext 策略或中间网络拦截 HTTP。
+  Uri _normalizePodcastAudioUri(Uri uri) {
+    if (uri.scheme != 'http' || uri.host != 'open.live.bbc.co.uk') {
+      return uri;
+    }
+    final segments = uri.pathSegments;
+    final protoIndex = segments.indexOf('proto');
+    if (protoIndex == -1 || protoIndex + 1 >= segments.length) {
+      return uri.replace(scheme: 'https');
+    }
+    final nextSegments = List<String>.from(segments);
+    if (nextSegments[protoIndex + 1] == 'http') {
+      nextSegments[protoIndex + 1] = 'https';
+    }
+    return uri.replace(scheme: 'https', pathSegments: nextSegments);
+  }
+
+  void _logDownloadFailure(Uri uri, DioException error) {
+    AppLogger.log(
+      _logTag,
+      'download failed url=$uri '
+      'type=${error.type} '
+      'status=${error.response?.statusCode ?? "(null)"} '
+      'message=${error.message ?? "(null)"} '
+      'cause=${error.error ?? "(null)"}',
+    );
   }
 
   String? _extensionFromMimeType(String? mimeType) {

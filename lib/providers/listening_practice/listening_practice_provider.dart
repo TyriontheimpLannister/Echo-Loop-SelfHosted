@@ -882,47 +882,14 @@ class ListeningPractice extends _$ListeningPractice {
         audioItem.id,
         dao: bookmarkDao,
       );
-      var bookmarkedIndices = Set<int>.from(storedBookmarks);
+      final bookmarkedIndices = Set<int>.from(storedBookmarks);
 
-      final isFirstLoad = storedBookmarks.isEmpty;
-      if (isFirstLoad) {
-        final autoBookmarks = BookmarkManager.autoAddBracketBookmarks(
-          sentences,
-        );
-        bookmarkedIndices = {...bookmarkedIndices, ...autoBookmarks};
-
-        if (autoBookmarks.isNotEmpty) {
-          for (final idx in autoBookmarks) {
-            await BookmarkManager.addBookmarkToDb(
-              audioItem.id,
-              sentences[idx],
-              dao: bookmarkDao,
-            );
-          }
-        }
-      }
-
-      // 清理 [] 包裹的句子文本
-      final cleanedSentences = <Sentence>[];
-      for (int i = 0; i < sentences.length; i++) {
-        final text = sentences[i].text.trim();
-        if (text.startsWith('[') && text.endsWith(']') && text.length > 2) {
-          cleanedSentences.add(
-            sentences[i].copyWith(
-              text: text.substring(1, text.length - 1).trim(),
-            ),
-          );
-        } else {
-          cleanedSentences.add(sentences[i]);
-        }
-      }
-
-      for (var sentence in cleanedSentences) {
+      for (var sentence in sentences) {
         sentence.isBookmarked = bookmarkedIndices.contains(sentence.index);
       }
 
       state = state.copyWith(
-        sentences: cleanedSentences,
+        sentences: sentences,
         bookmarkedIndices: bookmarkedIndices,
         currentFullIndex: 0,
       );

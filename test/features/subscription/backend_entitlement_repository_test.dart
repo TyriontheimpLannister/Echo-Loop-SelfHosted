@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:echo_loop/features/subscription/models/entitlement.dart';
+import 'package:echo_loop/features/subscription/models/entitlement_source.dart';
 import 'package:echo_loop/features/subscription/models/subscription_plan.dart';
 import 'package:echo_loop/features/subscription/services/entitlement_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,6 +37,8 @@ void main() {
         'entitlementIds': ['Echo Loop Plus'],
         'productId': 'echo_loop_plus_annual',
         'expiresAtMs': 1750000000000,
+        'willRenew': true,
+        'source': 'paddle',
       }),
     );
 
@@ -49,6 +52,119 @@ void main() {
       e.expiresAt,
       DateTime.fromMillisecondsSinceEpoch(1750000000000, isUtc: true),
     );
+    expect(e.willRenew, isTrue);
+    expect(e.source, EntitlementSource.paddle);
+  });
+
+  test('source 字段按购买来源映射，未知值回退 unknown', () async {
+    for (final entry in {
+      'apple': EntitlementSource.apple,
+      'google': EntitlementSource.google,
+      'paddle': EntitlementSource.paddle,
+      'stripe': EntitlementSource.unknown,
+    }.entries) {
+      when(
+        () => dio.get<Map<String, dynamic>>(
+          '/api/entitlements',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer(
+        (_) async => resp({
+          'isPremium': true,
+          'entitlementIds': ['Echo Loop Plus'],
+          'productId': 'echo_loop_plus_monthly',
+          'expiresAtMs': 1750000000000,
+          'willRenew': true,
+          'source': entry.key,
+        }),
+      );
+
+      final e = await repo.fetchRemote(userId: 'u1', accessToken: 't');
+      expect(e!.source, entry.value);
+      reset(dio);
+    }
+  });
+
+  test('source 字段缺失：兼容旧后端，映射为 unknown', () async {
+    when(
+      () => dio.get<Map<String, dynamic>>(
+        '/api/entitlements',
+        options: any(named: 'options'),
+      ),
+    ).thenAnswer(
+      (_) async => resp({
+        'isPremium': true,
+        'entitlementIds': ['Echo Loop Plus'],
+        'productId': 'echo_loop_plus_monthly',
+        'expiresAtMs': 1750000000000,
+        'willRenew': true,
+      }),
+    );
+
+    final e = await repo.fetchRemote(userId: 'u1', accessToken: 't');
+    expect(e!.source, EntitlementSource.unknown);
+  });
+
+  test('source 字段类型异常：兼容异常后端，映射为 unknown', () async {
+    when(
+      () => dio.get<Map<String, dynamic>>(
+        '/api/entitlements',
+        options: any(named: 'options'),
+      ),
+    ).thenAnswer(
+      (_) async => resp({
+        'isPremium': true,
+        'entitlementIds': ['Echo Loop Plus'],
+        'productId': 'echo_loop_plus_monthly',
+        'expiresAtMs': 1750000000000,
+        'willRenew': true,
+        'source': 42,
+      }),
+    );
+
+    final e = await repo.fetchRemote(userId: 'u1', accessToken: 't');
+    expect(e!.source, EntitlementSource.unknown);
+  });
+
+  test('willRenew=false：premium 有效但不再自动续订', () async {
+    when(
+      () => dio.get<Map<String, dynamic>>(
+        '/api/entitlements',
+        options: any(named: 'options'),
+      ),
+    ).thenAnswer(
+      (_) async => resp({
+        'isPremium': true,
+        'entitlementIds': ['Echo Loop Plus'],
+        'productId': 'echo_loop_plus_monthly',
+        'expiresAtMs': 1750000000000,
+        'willRenew': false,
+      }),
+    );
+
+    final e = await repo.fetchRemote(userId: 'u1', accessToken: 't');
+    expect(e!.isPremium, isTrue);
+    expect(e.willRenew, isFalse);
+  });
+
+  test('willRenew 字段缺失：兼容旧后端，保守映射为 false', () async {
+    when(
+      () => dio.get<Map<String, dynamic>>(
+        '/api/entitlements',
+        options: any(named: 'options'),
+      ),
+    ).thenAnswer(
+      (_) async => resp({
+        'isPremium': true,
+        'entitlementIds': ['Echo Loop Plus'],
+        'productId': 'echo_loop_plus_monthly',
+        'expiresAtMs': 1750000000000,
+      }),
+    );
+
+    final e = await repo.fetchRemote(userId: 'u1', accessToken: 't');
+    expect(e!.isPremium, isTrue);
+    expect(e.willRenew, isFalse);
   });
 
   test('isPremium=false：返回权威的 Entitlement.free（非 null，可据此降级）', () async {
@@ -125,5 +241,89 @@ void main() {
 
     final e = await repo.fetchRemote(userId: 'u1', accessToken: 't');
     expect(e, isNull);
+  });
+
+  test('force=true：请求携带 ?force=1', () async {
+    when(
+      () => dio.get<Map<String, dynamic>>(
+        '/api/entitlements',
+        queryParameters: any(named: 'queryParameters'),
+        options: any(named: 'options'),
+      ),
+    ).thenAnswer(
+      (_) async => resp({
+        'isPremium': false,
+        'entitlementIds': <String>[],
+        'productId': null,
+        'expiresAtMs': null,
+      }),
+    );
+
+    await repo.fetchRemote(userId: 'u1', accessToken: 't', force: true);
+
+    final captured = verify(
+      () => dio.get<Map<String, dynamic>>(
+        '/api/entitlements',
+        queryParameters: captureAny(named: 'queryParameters'),
+        options: any(named: 'options'),
+      ),
+    ).captured.single;
+    expect(captured, {'force': '1'});
+  });
+
+  test('默认（force=false）：请求不带 force 参数', () async {
+    when(
+      () => dio.get<Map<String, dynamic>>(
+        '/api/entitlements',
+        queryParameters: any(named: 'queryParameters'),
+        options: any(named: 'options'),
+      ),
+    ).thenAnswer(
+      (_) async => resp({
+        'isPremium': false,
+        'entitlementIds': <String>[],
+        'productId': null,
+        'expiresAtMs': null,
+      }),
+    );
+
+    await repo.fetchRemote(userId: 'u1', accessToken: 't');
+
+    final captured = verify(
+      () => dio.get<Map<String, dynamic>>(
+        '/api/entitlements',
+        queryParameters: captureAny(named: 'queryParameters'),
+        options: any(named: 'options'),
+      ),
+    ).captured.single;
+    expect(captured, isNull);
+  });
+
+  test('fetchRemote：GET /api/entitlements 携带 Bearer token', () async {
+    when(
+      () => dio.get<Map<String, dynamic>>(
+        '/api/entitlements',
+        options: any(named: 'options'),
+      ),
+    ).thenAnswer(
+      (_) async => resp({
+        'isPremium': false,
+        'entitlementIds': <String>[],
+        'productId': null,
+        'expiresAtMs': null,
+      }),
+    );
+
+    await repo.fetchRemote(userId: 'u1', accessToken: 't');
+
+    final captured =
+        verify(
+              () => dio.get<Map<String, dynamic>>(
+                '/api/entitlements',
+                options: captureAny(named: 'options'),
+              ),
+            ).captured.single
+            as Options;
+    expect(captured.headers?['Authorization'], 'Bearer t');
   });
 }

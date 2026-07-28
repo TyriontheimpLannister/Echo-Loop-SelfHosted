@@ -25,12 +25,12 @@ import '../widgets/dialogs/export_audio_dialog.dart';
 import '../widgets/manage_subtitles_sheet.dart';
 import 'app_data_dir.dart';
 
-/// 懒检测音频内容有效性：仅对已就绪、尚未检测（contentStatus==null）的音频后台触发一次。
+/// 懒检测音频内容有效性。
 ///
-/// 用户接触音频（打开学习 / 管理字幕）时才检测，把开销分摊到实际使用，
-/// 避免启动时对全库逐个解码波形。
+/// 用户接触音频（打开学习 / 管理字幕）时才检测，把开销分摊到实际使用。已确认
+/// ok 的音频不重复检测；异常状态允许重检，用于修正旧版误报缓存。
 void maybeCheckAudioContent(WidgetRef ref, AudioItem item) {
-  if (!item.isAudioReady || item.contentStatus != null) return;
+  if (!item.isAudioReady || item.contentStatus == AudioContentStatus.ok) return;
   unawaited(ref.read(audioLibraryProvider.notifier).checkAudioContent(item.id));
 }
 

@@ -17,6 +17,7 @@ import '../widgets/speech_permission_dialog.dart';
 import 'package:go_router/go_router.dart';
 import '../router/app_router.dart';
 import '../database/enums.dart';
+import '../features/chatbot/widgets/sentence_chat_button.dart';
 import '../models/intensive_listen_settings.dart';
 import '../utils/wakelock_mixin.dart';
 import '../utils/playback_speed.dart';
@@ -464,6 +465,15 @@ class _ListenAndRepeatPlayerScreenState
                 onPressed: _handleExit,
               ),
               actions: [
+                // AI 助手入口：打开前暂停自动推进（同设置按钮的处理）。
+                SentenceChatButton(
+                  sentenceText: currentSentence?.text ?? '',
+                  onBeforeOpen: () {
+                    ref
+                        .read(listenAndRepeatControllerProvider.notifier)
+                        .enterWaitingForUserAfterCurrentPrompt();
+                  },
+                ),
                 IconButton(
                   icon: const Icon(Icons.tune),
                   onPressed: () {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -24,6 +25,12 @@ import '../widgets/speech_permission_dialog.dart';
 import '../widgets/guide_flow.dart';
 import '../widgets/learning_progress_icon.dart';
 import '../widgets/study/study_stats_header.dart';
+
+/// 学习 Tab 待复习分组标题图标。
+const String _studyReviewIconAsset = 'assets/icon/refresh.svg';
+
+/// 学习 Tab 首次学习分组标题图标。
+const String _studyReadingIconAsset = 'assets/icon/reading.svg';
 
 /// 学习任务列表页
 ///
@@ -200,7 +207,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                           if (readyReviews.isNotEmpty) ...[
                             _TaskSection(
                               title: l10n.readyToReview(readyReviews.length),
-                              emoji: '🔁',
+                              iconAsset: _studyReviewIconAsset,
                               tasks: readyReviews,
                               l10n: l10n,
                               now: now,
@@ -233,7 +240,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                               title: l10n.firstStudySection(
                                 firstStudies.length,
                               ),
-                              emoji: '🌱',
+                              iconAsset: _studyReadingIconAsset,
                               tasks: firstStudies,
                               l10n: l10n,
                               now: now,
@@ -301,17 +308,17 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
 // Task Sections
 // ============================================================
 
-/// 任务区段（emoji + 标题 + 卡片列表）
+/// 任务区段（固定 SVG 图标 + 标题 + 卡片列表）
 class _TaskSection extends StatelessWidget {
   final String title;
-  final String emoji;
+  final String iconAsset;
   final List<StudyTask> tasks;
   final AppLocalizations l10n;
   final DateTime now;
 
   const _TaskSection({
     required this.title,
-    required this.emoji,
+    required this.iconAsset,
     required this.tasks,
     required this.l10n,
     required this.now,
@@ -326,7 +333,7 @@ class _TaskSection extends StatelessWidget {
         // 区段标题
         Row(
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 18)),
+            SvgPicture.asset(iconAsset, width: 20, height: 20),
             const SizedBox(width: 6),
             Text(
               title,

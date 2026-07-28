@@ -30,7 +30,8 @@ class _FakePurchaseService implements PurchaseService {
   @override
   Future<Entitlement> purchase(String planId) async => current;
   @override
-  Future<Entitlement> restore() async => current;
+  Future<RestorePurchaseResult> restore() async =>
+      RestorePurchaseResult(entitlement: current);
   @override
   Future<void> identify(String? userId) async {}
   @override
@@ -47,11 +48,15 @@ class _FakePurchaseService implements PurchaseService {
 }
 
 class _FakeRepo implements EntitlementRepository {
+  _FakeRepo([this.result]);
+  final Entitlement? result;
+
   @override
   Future<Entitlement?> fetchRemote({
     required String userId,
     required String accessToken,
-  }) async => null;
+    bool force = false,
+  }) async => result;
 }
 
 /// 内存缓存替身（避免 widget 测试触发 FlutterSecureStorage 平台缺失异常）。
@@ -65,14 +70,19 @@ class _MemCache extends EntitlementCache {
   Future<void> clear() async => _stored = null;
 }
 
-Widget _wrap(PurchaseService purchases) {
+Widget _wrap(PurchaseService purchases, {Entitlement? backendEntitlement}) {
   return ProviderScope(
     overrides: [
       purchaseServiceProvider.overrideWithValue(purchases),
-      entitlementRepositoryProvider.overrideWithValue(_FakeRepo()),
+      entitlementRepositoryProvider.overrideWithValue(
+        _FakeRepo(backendEntitlement),
+      ),
       entitlementCacheProvider.overrideWithValue(_MemCache()),
+      // 单一来源下匿名恒为 free：要展示后端权益需以登录身份对账。
       subscriptionIdentityProvider.overrideWithValue(
-        SubscriptionIdentity.anonymous,
+        backendEntitlement == null
+            ? SubscriptionIdentity.anonymous
+            : const SubscriptionIdentity(userId: 'u1', accessToken: 't1'),
       ),
     ],
     child: const MaterialApp(home: SubscriptionDebugScreen()),
@@ -104,7 +114,10 @@ void main() {
 
   testWidgets('pro 态：当前权益显示 isActive=true', (tester) async {
     await tester.pumpWidget(
-      _wrap(_FakePurchaseService(const Entitlement(isPremium: true))),
+      _wrap(
+        _FakePurchaseService(const Entitlement(isPremium: true)),
+        backendEntitlement: const Entitlement(isPremium: true),
+      ),
     );
     await tester.pumpAndSettle();
 

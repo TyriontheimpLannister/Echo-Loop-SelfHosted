@@ -100,6 +100,13 @@ class LearningProgress {
   /// 进度数据完整保留，恢复时按 [nextReviewAt] 原地继续。
   final bool isPaused;
 
+  /// 手动解锁当前复习轮的时刻（null = 未手动解锁）。
+  ///
+  /// 用户点击「立即解锁」时写入，使当前复习轮跳过时间锁提前可学。
+  /// 不篡改 [lastStageCompletedAt]，后续轮次仍按实际完成时间顺延。
+  /// 跨 stage 推进时必须清除（copyWith 传 `clearManualUnlockAt: true`）。
+  final DateTime? manualUnlockAt;
+
   /// 每个 [LearningStage] 的 plan 版本快照（dense map，snapshot-per-entity）。
   ///
   /// **写入规则**：仅在创建 progress / 迁移时由系统 stamp。日常用户操作
@@ -145,6 +152,7 @@ class LearningProgress {
     required this.updatedAt,
     this.skippedSubStageKeys = const {},
     this.isPaused = false,
+    this.manualUnlockAt,
     this.planVersionsByStage = const {},
   });
 
@@ -194,8 +202,10 @@ class LearningProgress {
   /// 下次复习可用时间（仅复习阶段有意义）
   ///
   /// 基于 [lastStageCompletedAt] + 当前阶段的 [intervalHours] 计算。
-  /// 首次学习阶段或缺少完成时间时返回 null。
+  /// 手动解锁后（[manualUnlockAt] 非空）返回解锁时刻，下游倒计时/任务
+  /// 分类/通知调度自动跟随。首次学习阶段或缺少完成时间时返回 null。
   DateTime? get nextReviewAt {
+    if (manualUnlockAt != null && isInReviewStage) return manualUnlockAt;
     if (lastStageCompletedAt == null) return null;
     if (currentStage.intervalHours <= 0) return null;
     return lastStageCompletedAt!.add(
@@ -231,7 +241,10 @@ class LearningProgress {
   /// 指定时间点是否可以开始复习。
   ///
   /// 规则：`now >= nextReviewAt` 即可复习；无复习时间时视为可复习。
+  /// 手动解锁后（[manualUnlockAt] 非空）无条件视为可复习——不依赖时间
+  /// 比较，规避开发者时光机（nowProvider）与真实持久化时间的偏差。
   bool isReviewReadyAt(DateTime now) {
+    if (manualUnlockAt != null) return true;
     final reviewAt = nextReviewAt;
     if (reviewAt == null) return true;
     return now.isAfter(reviewAt) || now.isAtSameMomentAs(reviewAt);
@@ -391,6 +404,8 @@ class LearningProgress {
     bool clearRetellSentenceIndex = false,
     Set<String>? skippedSubStageKeys,
     bool? isPaused,
+    DateTime? manualUnlockAt,
+    bool clearManualUnlockAt = false,
     Map<LearningStage, int>? planVersionsByStage,
   }) {
     return LearningProgress(
@@ -457,6 +472,9 @@ class LearningProgress {
       updatedAt: updatedAt ?? this.updatedAt,
       skippedSubStageKeys: skippedSubStageKeys ?? this.skippedSubStageKeys,
       isPaused: isPaused ?? this.isPaused,
+      manualUnlockAt: clearManualUnlockAt
+          ? null
+          : (manualUnlockAt ?? this.manualUnlockAt),
       planVersionsByStage: planVersionsByStage ?? this.planVersionsByStage,
     );
   }

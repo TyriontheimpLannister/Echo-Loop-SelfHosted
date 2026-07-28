@@ -52,7 +52,7 @@ void main() {
   final sentences = [
     Sentence(
       index: 0,
-      text: 'First.',
+      text: '[INDISTINCT CHATTER]',
       startTime: Duration.zero,
       endTime: const Duration(seconds: 3),
     ),
@@ -122,6 +122,15 @@ void main() {
     expect(state.bookmarkSettings.loopSentence, isTrue);
     expect(state.bookmarkSettings.sentenceLoopCount, 1);
     expect(state.bookmarkSettings.sentenceInterval, const Duration(seconds: 1));
+  });
+
+  test('首次加载方括号字幕不自动收藏且文本原样显示', () async {
+    await lp.loadAudio(createTestAudioItem(id: 'audio-brackets'));
+
+    final state = container.read(listeningPracticeProvider);
+    expect(state.bookmarkedIndices, isEmpty);
+    expect(state.sentences.first.text, '[INDISTINCT CHATTER]');
+    expect(state.sentences.first.isBookmarked, isFalse);
   });
 
   test('重新加载同一音频（早返回）不重置循环开关', () async {

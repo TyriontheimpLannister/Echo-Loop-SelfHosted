@@ -74,14 +74,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Curated Podcasts'), findsOneWidget);
-    expect(find.textContaining('2 podcasts'), findsOneWidget);
+    expect(find.text('Podcasts'), findsOneWidget);
+    expect(find.textContaining('2 podcasts'), findsNothing);
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
     expect(find.text('Official Collection'), findsOneWidget);
 
     final entryImage = tester.widget<CachedNetworkImage>(
       find.byType(CachedNetworkImage).first,
     );
-    expect(entryImage.imageUrl, 'https://i.postimg.cc/tRPzG4zX/podcast.jpg');
+    expect(
+      entryImage.imageUrl,
+      'https://i.postimg.cc/t4fTVSWw/Apple-Podcasts.png',
+    );
   });
 
   testWidgets('只有精选播客时不显示精选合集空态', (tester) async {
@@ -104,7 +108,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Curated Podcasts'), findsOneWidget);
+    expect(find.text('Podcasts'), findsOneWidget);
     expect(find.text('No curated collections yet'), findsNothing);
   });
 
@@ -135,7 +139,7 @@ void main() {
 
     expect(find.text('Sign in to add collections'), findsOneWidget);
     expect(
-      find.textContaining('Sign in to add curated collections'),
+      find.textContaining('Sign in to add any curated collections'),
       findsOneWidget,
     );
     expect(find.byType(CircularProgressIndicator), findsNothing);

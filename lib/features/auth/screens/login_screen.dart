@@ -263,11 +263,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       );
   }
 
-  /// 登录成功或用户取消时结束认证流程；失败时留在主登录页，方便改选其它方式。
+  /// 只有登录成功时结束认证流程；失败或取消时留在主登录页，方便改选其它方式。
   ///
   /// 独立深链进入登录页时没有可回退页面，继续使用“我的”页作为兜底。
   void _finishAuthAttempt(AuthAttemptResult result) {
-    if (result == AuthAttemptResult.failure) {
+    if (result != AuthAttemptResult.success) {
       return;
     }
     if (context.canPop()) {

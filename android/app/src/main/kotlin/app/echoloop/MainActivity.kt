@@ -11,6 +11,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : AudioServiceActivity() {
     private var googleServicesChannel: MethodChannel? = null
     private var appUpdateChannel: MethodChannel? = null
+    private var deviceInfoChannel: MethodChannel? = null
     private var speechPracticeHandler: AndroidSpeechPracticeHandler? = null
     private var audioDecodeHandler: AndroidAudioDecodeHandler? = null
 
@@ -39,6 +40,17 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
         }
+        deviceInfoChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "top.echo-loop/device_info",
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getDeviceInfo" -> result.success(deviceInfo())
+                    else -> result.notImplemented()
+                }
+            }
+        }
         speechPracticeHandler = AndroidSpeechPracticeHandler(
             this, flutterEngine.dartExecutor.binaryMessenger,
         )
@@ -52,6 +64,8 @@ class MainActivity : AudioServiceActivity() {
         googleServicesChannel = null
         appUpdateChannel?.setMethodCallHandler(null)
         appUpdateChannel = null
+        deviceInfoChannel?.setMethodCallHandler(null)
+        deviceInfoChannel = null
         speechPracticeHandler?.dispose()
         speechPracticeHandler = null
         audioDecodeHandler?.dispose()
@@ -98,5 +112,18 @@ class MainActivity : AudioServiceActivity() {
             Log.w("AppUpdate", "installer source failed", e)
             null
         }
+    }
+
+    private fun deviceInfo(): Map<String, Any?> {
+        return mapOf(
+            "manufacturer" to Build.MANUFACTURER,
+            "brand" to Build.BRAND,
+            "model" to Build.MODEL,
+            "device" to Build.DEVICE,
+            "product" to Build.PRODUCT,
+            "androidRelease" to Build.VERSION.RELEASE,
+            "sdkInt" to Build.VERSION.SDK_INT,
+            "supportedAbis" to Build.SUPPORTED_ABIS.toList(),
+        )
     }
 }

@@ -717,8 +717,9 @@ class _BookmarkSentenceTileState extends ConsumerState<_BookmarkSentenceTile> {
   /// 跳转到句子详情页（单句精听）
   void _openDetail() {
     final bm = widget.bookmark;
-    context.push(
-      AppRoutes.sentenceDetail,
+    AppRoutes.pushNested(
+      context,
+      AppRoutes.sentenceDetailSegment,
       extra: SentenceDetailArgs(
         audioItemId: widget.audioId,
         audioName: widget.audioName,

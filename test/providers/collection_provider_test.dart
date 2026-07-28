@@ -47,6 +47,91 @@ void main() {
     });
   });
 
+  group('CollectionList 更新时间语义', () {
+    test('重命名会刷新 updatedAt', () async {
+      final initialUpdatedAt = DateTime(2026, 1, 1);
+      final container = ProviderContainer(
+        overrides: [
+          collectionListProvider.overrideWith(
+            () => TestCollectionList(
+              CollectionState(
+                rawCollections: [
+                  Collection(
+                    id: 'c1',
+                    name: '旧名称',
+                    createdDate: initialUpdatedAt,
+                    updatedAt: initialUpdatedAt,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(collectionListProvider.notifier)
+          .renameCollection('c1', '新名称');
+
+      final collection = container
+          .read(collectionListProvider)
+          .rawCollections
+          .single;
+      expect(collection.name, '新名称');
+      expect(collection.updatedAt.isAfter(initialUpdatedAt), isTrue);
+    });
+
+    test('添加与移除音频会刷新 updatedAt，置顶不会刷新', () async {
+      final initialUpdatedAt = DateTime(2026, 1, 1);
+      final container = ProviderContainer(
+        overrides: [
+          collectionListProvider.overrideWith(
+            () => TestCollectionList(
+              CollectionState(
+                rawCollections: [
+                  Collection(
+                    id: 'c1',
+                    name: '合集',
+                    createdDate: initialUpdatedAt,
+                    updatedAt: initialUpdatedAt,
+                  ),
+                ],
+                audioIdsMap: const {'c1': []},
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(collectionListProvider.notifier);
+
+      await notifier.addAudioToCollection('c1', 'a1');
+      final afterAdd = container
+          .read(collectionListProvider)
+          .rawCollections
+          .single;
+      expect(afterAdd.updatedAt.isAfter(initialUpdatedAt), isTrue);
+
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+      await notifier.togglePin('c1');
+      final afterPin = container
+          .read(collectionListProvider)
+          .rawCollections
+          .single;
+      expect(afterPin.isPinned, isTrue);
+      expect(afterPin.updatedAt, afterAdd.updatedAt);
+
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+      await notifier.removeAudioFromCollection('c1', 'a1');
+      final afterRemove = container
+          .read(collectionListProvider)
+          .rawCollections
+          .single;
+      expect(afterRemove.updatedAt.isAfter(afterAdd.updatedAt), isTrue);
+    });
+  });
+
   group('CollectionState', () {
     final now = DateTime(2026, 1, 15);
 

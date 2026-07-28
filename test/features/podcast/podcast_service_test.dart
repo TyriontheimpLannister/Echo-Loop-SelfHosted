@@ -89,7 +89,10 @@ class _SeededCollectionList extends CollectionList {
   }
 
   @override
-  Future<void> updatePodcastCollection(Collection updated) async {
+  Future<void> updatePodcastCollection(
+    Collection updated, {
+    bool touchUpdatedAt = true,
+  }) async {
     final collections = [...state.rawCollections];
     final index = collections.indexWhere((c) => c.id == updated.id);
     if (index == -1) return;
@@ -228,6 +231,14 @@ void main() {
     <title>My Podcast</title>
     <itunes:author>John Doe</itunes:author>
     <description>A great podcast</description>
+    <link>https://example.com</link>
+    <language>en-us</language>
+    <copyright>Copyright 2026 Example</copyright>
+    <itunes:explicit>false</itunes:explicit>
+    <category>Education</category>
+    <itunes:category text="Language Learning">
+      <itunes:category text="English"/>
+    </itunes:category>
     <image><url>https://example.com/cover.jpg</url></image>
     <item>
       <guid>ep-001</guid>
@@ -253,6 +264,15 @@ void main() {
       expect(result.meta.description, 'A great podcast');
       expect(result.meta.imageUrl, 'https://example.com/cover.jpg');
       expect(result.meta.feedUrl, feedUrl);
+      expect(result.meta.websiteUrl, 'https://example.com');
+      expect(result.meta.language, 'en-us');
+      expect(result.meta.copyright, 'Copyright 2026 Example');
+      expect(result.meta.explicit, 'false');
+      expect(result.meta.categories, [
+        'Education',
+        'Language Learning',
+        'English',
+      ]);
       expect(result.episodes, hasLength(2));
 
       final ep1 = result.episodes.first;
@@ -264,6 +284,31 @@ void main() {
       expect(ep1.description, 'Episode one summary');
       expect(ep1.imageUrl, 'https://example.com/ep1.jpg');
       expect(ep1.link, 'https://example.com/episodes/1');
+    });
+
+    test('BBC RSS 同时提供 secure enclosure 时优先使用 HTTPS 音频 URL', () {
+      const xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+    xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+    xmlns:ppg="http://bbc.co.uk/2009/01/ppgRss">
+  <channel>
+    <title>BBC Learning English</title>
+    <item>
+      <guid>urn:bbc:podcast:p0n4bkpz</guid>
+      <title>The English We Speak: Short-change</title>
+      <enclosure url="http://open.live.bbc.co.uk/mediaselector/6/redir/version/2.0/mediaset/audio-nondrm-download-rss-low/proto/http/vpid/p0n4bjcm.mp3" type="audio/mpeg"/>
+      <ppg:enclosureSecure url="https://open.live.bbc.co.uk/mediaselector/6/redir/version/2.0/mediaset/audio-nondrm-download-rss-low/proto/https/vpid/p0n4bjcm.mp3" type="audio/mpeg"/>
+    </item>
+  </channel>
+</rss>''';
+
+      final result = parser.parse(xml, feedUrl: feedUrl);
+
+      expect(
+        result.episodes.single.enclosureUrl,
+        'https://open.live.bbc.co.uk/mediaselector/6/redir/version/2.0/mediaset/audio-nondrm-download-rss-low/proto/https/vpid/p0n4bjcm.mp3',
+      );
+      expect(result.episodes.single.enclosureType, 'audio/mpeg');
     });
 
     test('解析 VOA 单集的 summary 和网页 link', () {
@@ -319,13 +364,15 @@ void main() {
 
       final result = parser.parse(xml, feedUrl: feedUrl);
 
+      // 段落结构保留为换行：<p> 之间与 <br/> 转为 \n。
       expect(
         result.meta.description,
-        'Learn and practise useful English with clips from the BBC. Each week, we talk about & explain phrases.',
+        'Learn and practise useful English with clips from the BBC.\n'
+        'Each week, we talk about & explain phrases.',
       );
       expect(
         result.episodes.single.description,
-        'What was the last thing you bought? And why?',
+        'What was the last thing you bought?\nAnd why?',
       );
     });
 
@@ -400,6 +447,11 @@ void main() {
         author: 'Jane',
         description: 'Desc',
         imageUrl: 'https://example.com/img.jpg',
+        categories: ['Education', 'English'],
+        language: 'en-us',
+        copyright: 'Copyright',
+        websiteUrl: 'https://example.com',
+        explicit: 'false',
       );
       final json = meta.toJson();
       final restored = PodcastFeedMeta.fromJson(json);
@@ -408,6 +460,22 @@ void main() {
       expect(restored.author, meta.author);
       expect(restored.description, meta.description);
       expect(restored.imageUrl, meta.imageUrl);
+      expect(restored.categories, meta.categories);
+      expect(restored.language, meta.language);
+      expect(restored.copyright, meta.copyright);
+      expect(restored.websiteUrl, meta.websiteUrl);
+      expect(restored.explicit, meta.explicit);
+    });
+
+    test('fromJson 兼容旧 meta JSON', () {
+      final restored = PodcastFeedMeta.fromJson({
+        'title': 'Legacy',
+        'feedUrl': 'https://example.com/feed.xml',
+      });
+
+      expect(restored.title, 'Legacy');
+      expect(restored.categories, isEmpty);
+      expect(restored.language, isNull);
     });
   });
 
@@ -506,6 +574,35 @@ void main() {
             .having((c) => c.podcastInputUrl, 'podcastInputUrl', appleUrl)
             .having((c) => c.podcastFeedUrl, 'podcastFeedUrl', feedUrl),
       );
+    });
+
+    test('已知 RSS 时保存 Apple inputUrl 并直接拉取 feedUrl', () async {
+      const feed = '''<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>VOA Learning English</title>
+    <description>Slow-paced English learning programs.</description>
+  </channel>
+</rss>''';
+      final dio = _RoutingDio({feedUrl: feed});
+      final repoProvider = Provider(
+        (ref) => PodcastRepository(
+          ref,
+          dio: dio,
+          urlResolver: _FixedResolver('https://should-not-resolve.example/rss'),
+          feedParser: PodcastFeedParser(),
+        ),
+      );
+      final container = makeContainer([]);
+      addTearDown(container.dispose);
+
+      final collection = await container
+          .read(repoProvider)
+          .createAndFetch(appleUrl, knownFeedUrl: feedUrl);
+
+      expect(dio.requestedPaths, [feedUrl]);
+      expect(collection.podcastInputUrl, appleUrl);
+      expect(collection.podcastFeedUrl, feedUrl);
     });
 
     test('首次创建时多集节目批量入库并建立合集关联', () async {
@@ -700,11 +797,7 @@ void main() {
               'podcastLastRefreshError',
               isNull,
             )
-            .having(
-              (c) => c.description,
-              'description',
-              collection.description,
-            ),
+            .having((c) => c.description, 'description', 'New RSS feed.'),
       );
     });
 

@@ -1,4 +1,5 @@
 import 'package:echo_loop/features/subscription/models/entitlement.dart';
+import 'package:echo_loop/features/subscription/models/entitlement_source.dart';
 import 'package:echo_loop/features/subscription/models/subscription_plan.dart';
 import 'package:flutter_test/flutter_test.dart';
 

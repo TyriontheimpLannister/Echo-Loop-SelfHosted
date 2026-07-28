@@ -86,6 +86,7 @@ class _RecordingIntensiveListenPlayer extends TestIntensiveListenPlayer {
   int replayDuringCountdownCalls = 0;
   int goToNextCalls = 0;
   int goToPreviousCalls = 0;
+  int goToSentenceCalls = 0;
 
   @override
   Future<void> startPlaying() async {}
@@ -124,6 +125,24 @@ class _RecordingIntensiveListenPlayer extends TestIntensiveListenPlayer {
   Future<void> goToPrevious() async {
     goToPreviousCalls += 1;
     await super.goToPrevious();
+  }
+
+  @override
+  Future<void> goToSentence(int index) async {
+    goToSentenceCalls += 1;
+    if (index < 0 || index >= state.totalSentences) return;
+    state = state.copyWith(
+      currentSentenceIndex: index,
+      currentPlayCount: 1,
+      isAnnotationMode: false,
+      isAnnotationReplay: false,
+      isTextRevealed: false,
+      isCurrentSentenceAutoMarked: false,
+    );
+  }
+
+  void emit(IntensiveListenState nextState) {
+    state = nextState;
   }
 }
 
@@ -299,7 +318,7 @@ void main() {
       await tester.pumpWidget(createTestWidget());
       await tester.pumpAndSettle();
 
-      expect(find.text('Intensive Listening'), findsOneWidget);
+      expect(find.text('Listen sentence by sentence'), findsOneWidget);
     });
 
     testWidgets('AppBar 显示设置按钮', (tester) async {
@@ -330,7 +349,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Peek'), findsOneWidget);
+      expect(find.text('Peek at subtitles'), findsOneWidget);
       expect(find.text('Unclear'), findsOneWidget);
     });
 
@@ -608,7 +627,7 @@ void main() {
 
       // 难句统计 chip 显示数据库难句总数 2（而非本次会话的 1），标签为 Difficult
       expect(find.text('2'), findsOneWidget);
-      expect(find.text('Difficult'), findsOneWidget);
+      expect(find.text('challenging'), findsOneWidget);
     });
 
     testWidgets('完成后仍会检查并弹出学习版通知提示', (tester) async {
@@ -680,7 +699,7 @@ void main() {
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Exit Intensive Listening?'), findsNothing);
+      expect(find.text('Exit Listening sentence by sentence?'), findsNothing);
       expect(find.text('Open player'), findsOneWidget);
 
       await tester.tap(find.text('Open player'));
@@ -731,7 +750,7 @@ void main() {
 
       // 难句标记行：★ + 文案
       expect(find.byIcon(Icons.bookmark), findsOneWidget);
-      expect(find.text('Marked difficult, tap to undo'), findsOneWidget);
+      expect(find.text('Already saved, tap to undo'), findsOneWidget);
       // 底部显示"取消标记"和"听不懂"按钮
       expect(find.text('Unmark'), findsOneWidget);
       expect(find.text('Unclear'), findsOneWidget);
@@ -750,7 +769,7 @@ void main() {
 
       // 当前句子（索引0）不在难句集合中，显示空心星标 + 灰色文案
       expect(find.byIcon(Icons.bookmark_border), findsOneWidget);
-      expect(find.text('Tap to mark as difficult'), findsOneWidget);
+      expect(find.text('Tap to mark as challenging'), findsOneWidget);
     });
 
     testWidgets('正常模式下点击标记行可取消标记', (tester) async {
@@ -770,7 +789,7 @@ void main() {
 
       // 取消后变为空心星标 + 灰色文案
       expect(find.byIcon(Icons.bookmark_border), findsOneWidget);
-      expect(find.text('Tap to mark as difficult'), findsOneWidget);
+      expect(find.text('Tap to mark as challenging'), findsOneWidget);
     });
 
     testWidgets('偷看字幕点击切换 — 初始隐藏', (tester) async {
@@ -803,12 +822,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // 点击偷看按钮切换为显示
-      await tester.tap(find.text('Peek'));
+      await tester.tap(find.text('Peek at subtitles'));
       await tester.pumpAndSettle();
 
       // 统一可点词组件：整句渲染为单个 RichText
       expect(
-        find.textContaining('sentence', findRichText: true),
+        find.textContaining('Test sentence number', findRichText: true),
         findsOneWidget,
       );
       // 偷看按钮图标变为 visibility_off
@@ -827,17 +846,20 @@ void main() {
       await tester.pumpAndSettle();
 
       // 第一次点击显示
-      await tester.tap(find.text('Peek'));
+      await tester.tap(find.text('Peek at subtitles'));
       await tester.pumpAndSettle();
       expect(
-        find.textContaining('sentence', findRichText: true),
+        find.textContaining('Test sentence number', findRichText: true),
         findsOneWidget,
       );
 
       // 第二次点击隐藏（文案已变为 Hide）
-      await tester.tap(find.text('Hide'));
+      await tester.tap(find.text('Hide subtitles'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('sentence', findRichText: true), findsNothing);
+      expect(
+        find.textContaining('Test sentence number', findRichText: true),
+        findsNothing,
+      );
       expect(find.byIcon(Icons.visibility_outlined), findsOneWidget);
     });
 
@@ -864,6 +886,284 @@ void main() {
 
       // 下一句应自动隐藏
       expect(find.byIcon(Icons.visibility_outlined), findsOneWidget);
+    });
+
+    testWidgets('正文左滑切到下一句并同步进度', (tester) async {
+      late _RecordingIntensiveListenPlayer player;
+      await tester.pumpWidget(
+        createTestWidget(
+          playerState: createPlayerState(
+            currentSentenceIndex: 2,
+            totalSentences: 5,
+          ),
+          playerFactory: (state, sentences) {
+            player = _RecordingIntensiveListenPlayer(state, sentences);
+            return player;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.fling(
+        find.byKey(const ValueKey('intensive-sentence-page-view')),
+        const Offset(-400, 0),
+        1000,
+      );
+      await tester.pumpAndSettle();
+
+      expect(player.goToSentenceCalls, 1);
+      expect(player.currentIndex, 3);
+      expect(find.text('Sentence 4/5'), findsOneWidget);
+    });
+
+    testWidgets('正文右滑切到上一句并同步进度', (tester) async {
+      late _RecordingIntensiveListenPlayer player;
+      await tester.pumpWidget(
+        createTestWidget(
+          playerState: createPlayerState(
+            currentSentenceIndex: 2,
+            totalSentences: 5,
+          ),
+          playerFactory: (state, sentences) {
+            player = _RecordingIntensiveListenPlayer(state, sentences);
+            return player;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.fling(
+        find.byKey(const ValueKey('intensive-sentence-page-view')),
+        const Offset(400, 0),
+        1000,
+      );
+      await tester.pumpAndSettle();
+
+      expect(player.goToSentenceCalls, 1);
+      expect(player.currentIndex, 1);
+      expect(find.text('Sentence 2/5'), findsOneWidget);
+    });
+
+    testWidgets('外部自动切句驱动分页但不会重复切句', (tester) async {
+      late _RecordingIntensiveListenPlayer player;
+      await tester.pumpWidget(
+        createTestWidget(
+          playerState: createPlayerState(
+            currentSentenceIndex: 2,
+            totalSentences: 5,
+          ),
+          playerFactory: (state, sentences) {
+            player = _RecordingIntensiveListenPlayer(state, sentences);
+            return player;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 模拟盲听流程自然播完后推进到相邻句。
+      player.emit(player.state.copyWith(currentSentenceIndex: 3));
+      await tester.pumpAndSettle();
+
+      expect(player.currentIndex, 3);
+      expect(player.goToSentenceCalls, 0);
+      expect(find.text('Sentence 4/5'), findsOneWidget);
+    });
+
+    testWidgets('从首句自动推进时分页使用 320ms 横滑动画', (tester) async {
+      late _RecordingIntensiveListenPlayer player;
+      await tester.pumpWidget(
+        createTestWidget(
+          playerState: createPlayerState(
+            currentSentenceIndex: 0,
+            totalSentences: 5,
+          ),
+          playerFactory: (state, sentences) {
+            player = _RecordingIntensiveListenPlayer(state, sentences);
+            return player;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      player.emit(player.state.copyWith(currentSentenceIndex: 1));
+      await tester.pump();
+      // 分页同步通过 post-frame 回调启动动画，先让该回调完成。
+      await tester.pump();
+      // 300ms 时动画仍未结束，避免时长退回较快的 280ms。
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final pageView = tester.widget<PageView>(
+        find.byKey(const ValueKey('intensive-sentence-page-view')),
+      );
+      expect(pageView.controller!.page, greaterThan(0));
+      expect(pageView.controller!.page, lessThan(1));
+      expect(player.goToSentenceCalls, 0);
+    });
+
+    testWidgets('短距离或垂直拖动正文不会切句', (tester) async {
+      late _RecordingIntensiveListenPlayer player;
+      await tester.pumpWidget(
+        createTestWidget(
+          playerState: createPlayerState(currentSentenceIndex: 2),
+          playerFactory: (state, sentences) {
+            player = _RecordingIntensiveListenPlayer(state, sentences);
+            return player;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.drag(
+        find.byKey(const ValueKey('intensive-sentence-page-view')),
+        const Offset(-32, 0),
+      );
+      await tester.drag(
+        find.byKey(const ValueKey('intensive-sentence-page-view')),
+        const Offset(0, -80),
+      );
+      await tester.pumpAndSettle();
+
+      expect(player.goToSentenceCalls, 0);
+      expect(player.currentIndex, 2);
+    });
+
+    testWidgets('讲解状态下横滑也会切句', (tester) async {
+      late _RecordingIntensiveListenPlayer player;
+      await tester.pumpWidget(
+        createTestWidget(
+          playerState: createPlayerState(
+            currentSentenceIndex: 2,
+            isAnnotationMode: true,
+            isPlaying: false,
+          ),
+          playerFactory: (state, sentences) {
+            player = _RecordingIntensiveListenPlayer(state, sentences);
+            return player;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.fling(
+        find.byKey(const ValueKey('intensive-sentence-page-view')),
+        const Offset(-400, 0),
+        1000,
+      );
+      await tester.pumpAndSettle();
+
+      expect(player.goToSentenceCalls, 1);
+      expect(player.currentIndex, 3);
+      expect(player.state.isAnnotationMode, isFalse);
+    });
+
+    testWidgets('讲解状态横滑停稳前目标页显示盲听且不重置源句', (tester) async {
+      late _RecordingIntensiveListenPlayer player;
+      await tester.pumpWidget(
+        createTestWidget(
+          playerState: createPlayerState(
+            currentSentenceIndex: 2,
+            isAnnotationMode: true,
+            isPlaying: false,
+          ),
+          playerFactory: (state, sentences) {
+            player = _RecordingIntensiveListenPlayer(state, sentences);
+            return player;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(
+          find.byKey(const ValueKey('intensive-sentence-page-view')),
+        ),
+      );
+      final pagerSize = tester.getSize(
+        find.byKey(const ValueKey('intensive-sentence-page-view')),
+      );
+      await gesture.moveBy(Offset(-pagerSize.width * 0.75, 0));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('intensive-sentence-mode-3-blind')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('intensive-sentence-mode-3-blind')),
+          matching: find.text('Continue'),
+        ),
+        findsNothing,
+      );
+      expect(player.goToSentenceCalls, 0);
+      expect(player.currentIndex, 2);
+      expect(player.state.isAnnotationMode, isTrue);
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(player.goToSentenceCalls, 1);
+      expect(player.currentIndex, 3);
+      expect(player.state.isAnnotationMode, isFalse);
+    });
+
+    testWidgets('讲解状态取消横滑时保留源句讲解态', (tester) async {
+      late _RecordingIntensiveListenPlayer player;
+      await tester.pumpWidget(
+        createTestWidget(
+          playerState: createPlayerState(
+            currentSentenceIndex: 2,
+            isAnnotationMode: true,
+            isPlaying: false,
+          ),
+          playerFactory: (state, sentences) {
+            player = _RecordingIntensiveListenPlayer(state, sentences);
+            return player;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.drag(
+        find.byKey(const ValueKey('intensive-sentence-page-view')),
+        const Offset(-32, 0),
+      );
+      await tester.pumpAndSettle();
+
+      expect(player.goToSentenceCalls, 0);
+      expect(player.currentIndex, 2);
+      expect(player.state.isAnnotationMode, isTrue);
+    });
+
+    testWidgets('讲解状态底部切句会在横滑结束后才提交', (tester) async {
+      late _RecordingIntensiveListenPlayer player;
+      await tester.pumpWidget(
+        createTestWidget(
+          playerState: createPlayerState(
+            currentSentenceIndex: 2,
+            isAnnotationMode: true,
+            isPlaying: false,
+          ),
+          playerFactory: (state, sentences) {
+            player = _RecordingIntensiveListenPlayer(state, sentences);
+            return player;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.skip_next_rounded));
+      await tester.pump(const Duration(milliseconds: 160));
+
+      expect(player.goToSentenceCalls, 0);
+      expect(player.currentIndex, 2);
+      expect(player.state.isAnnotationMode, isTrue);
+
+      await tester.pumpAndSettle();
+      expect(player.goToNextCalls, 1);
+      expect(player.currentIndex, 3);
+      expect(player.state.isAnnotationMode, isFalse);
     });
 
     testWidgets('标注模式下导航按钮可用（非重播状态）', (tester) async {

@@ -29,14 +29,17 @@ enum TranscriptSource {
 
 /// 音频内容有效性状态。
 ///
-/// 仅在新下载/导入完成时检测一次：解码失败（解不出时长）或全程静音都判为
-/// [suspectEmpty]。null 表示尚未检测（旧数据或检测前），不展示警告。
+/// 仅在新下载/导入完成时检测一次：先确认文件可解码，再判断是否静音。
+/// null 表示尚未检测（旧数据或检测前），不展示警告。
 enum AudioContentStatus {
-  /// 内容正常（能解码且有有效音量）。
+  /// 内容正常（能解码且未判定为静音）。
   ok,
 
-  /// 疑似为空：文件损坏/解码失败，或全程静音、无人声。
-  suspectEmpty;
+  /// 音频可能损坏，或当前设备无法解码第一条音频流。
+  damaged,
+
+  /// 音频可解码，但疑似全程静音、无人声。
+  silent;
 
   /// 从整数值创建（数据库存储用）。
   static AudioContentStatus? fromIndex(int? index) {
@@ -113,8 +116,8 @@ class AudioItem {
 
   /// 音频内容有效性状态（新下载时检测一次）。
   ///
-  /// null 表示未检测（旧数据或检测前）；[AudioContentStatus.suspectEmpty]
-  /// 表示解码失败或全程静音，列表项展示警告、转录前拦截。
+  /// null 表示未检测（旧数据或检测前）；非 ok 状态会在列表项展示警告，并在
+  /// 转录前二次确认。
   final AudioContentStatus? contentStatus;
 
   /// 官方合集中该音频在后端的 UUID；用户自建音频为 null。

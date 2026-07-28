@@ -18,7 +18,6 @@ import '../../theme/app_theme.dart';
 import '../../utils/sense_group_timing.dart';
 import '../common/async_toggle_button.dart';
 import '../common/shimmer_placeholder.dart';
-import '../common/text_context_menu.dart';
 import '../guide_flow.dart';
 import 'selectable_sentence_text.dart';
 import 'sense_group_text.dart';
@@ -32,7 +31,7 @@ enum ContentLoadState { idle, loading, loaded, error }
 /// 意群显示模式
 enum SenseGroupMode { off, medium, fine }
 
-/// 句子顶部留白，给词组选区手柄圆点让位。
+/// 句子顶部留白。
 const double _sentenceTopPadding = AppSpacing.m - 4;
 
 /// 句子与内联翻译之间的留白，保持译文贴近原句。
@@ -40,7 +39,7 @@ const double _sentenceBottomPadding = AppSpacing.xs;
 
 /// 标注模式句子卡片
 ///
-/// 句子文本经 [SelectableSentenceText] 渲染（点词查词 + 词组选区手柄），
+/// 句子文本经 [SelectableSentenceText] 渲染（点词查词 + 系统标准选区），
 /// 内部管理翻译/解析的加载状态和意群显示开关。
 ///
 /// 工具栏可以通过 [showToolbar] 控制是否在卡片内部渲染。
@@ -120,7 +119,11 @@ class SentenceAnnotationCard extends StatefulWidget {
   final void Function(int groupIndex)? onTapSenseGroup;
 
   /// 请求拆分意群回调
-  final Future<void> Function()? onRequestSenseGroups;
+  final Future<void> Function(SentenceAiRequestSource source)?
+  onRequestSenseGroups;
+
+  /// 是否在首帧后自动加载意群分割。
+  final bool autoLoadSenseGroups;
 
   /// 等待 fine 意群就绪回调（流式场景：medium 先返回、fine 后返回）。
   ///
@@ -189,6 +192,7 @@ class SentenceAnnotationCard extends StatefulWidget {
     this.playedSenseGroupIndices = const {},
     this.onTapSenseGroup,
     this.onRequestSenseGroups,
+    this.autoLoadSenseGroups = false,
     this.onAwaitSenseGroupFine,
     this.hasWordTimestamps = false,
     this.showToolbar = true,
@@ -210,6 +214,9 @@ class SentenceAnnotationCard extends StatefulWidget {
 class SentenceAnnotationCardState extends State<SentenceAnnotationCard> {
   /// 意群显示模式
   SenseGroupMode _senseGroupMode = SenseGroupMode.off;
+
+  /// 意群面板状态，用于自动请求时同步工具栏 loading。
+  ContentLoadState _senseGroupState = ContentLoadState.idle;
 
   /// 翻译面板状态
   ContentLoadState _translationState = ContentLoadState.idle;
@@ -327,7 +334,8 @@ class SentenceAnnotationCardState extends State<SentenceAnnotationCard> {
     }
     if (widget.text != oldWidget.text ||
         widget.autoLoadTranslation != oldWidget.autoLoadTranslation ||
-        widget.autoLoadAnalysis != oldWidget.autoLoadAnalysis) {
+        widget.autoLoadAnalysis != oldWidget.autoLoadAnalysis ||
+        widget.autoLoadSenseGroups != oldWidget.autoLoadSenseGroups) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _triggerInitialAutoLoads();
@@ -360,6 +368,15 @@ class SentenceAnnotationCardState extends State<SentenceAnnotationCard> {
       );
       unawaited(
         _runAutoLoad('analysis', () => _requestAnalysis(automatic: true)),
+      );
+    }
+    if (widget.autoLoadSenseGroups) {
+      AppLogger.log(
+        'SentenceAnnotation',
+        '自动加载意群: start text="${widget.text}"',
+      );
+      unawaited(
+        _runAutoLoad('senseGroup', () => _requestSenseGroups(automatic: true)),
       );
     }
   }
@@ -404,6 +421,8 @@ class SentenceAnnotationCardState extends State<SentenceAnnotationCard> {
       // 先 await fine 就绪（流已结束则立即返回），await 期间 AsyncToggleButton 自动显示加载。
       if (prevMode == SenseGroupMode.medium && !result.areBothEqual) {
         if (widget.onAwaitSenseGroupFine != null) {
+          setState(() => _senseGroupState = ContentLoadState.loading);
+          _notifyToolbar();
           await widget.onAwaitSenseGroupFine!.call();
         }
         if (!mounted) return;
@@ -418,6 +437,7 @@ class SentenceAnnotationCardState extends State<SentenceAnnotationCard> {
         AppLogger.log('SenseGroup', '切换模式: $prevMode → $nextMode');
         widget.onSenseGroupModeChanged?.call(_activeSenseGroups ?? []);
         _notifyToolbar();
+        setState(() => _senseGroupState = ContentLoadState.loaded);
         return;
       }
 
@@ -441,17 +461,60 @@ class SentenceAnnotationCardState extends State<SentenceAnnotationCard> {
       // （空结果不会被父组件缓存，因此可重复点击重试）
       widget.onToolbarButtonTapped?.call();
       AppLogger.log('SenseGroup', '无数据，发起 API 请求...');
-      await widget.onRequestSenseGroups!();
+      await _requestSenseGroups(automatic: false);
+    }
+  }
+
+  /// 加载意群。自动触发与用户点击共用该逻辑，保证按钮 loading 行为一致。
+  Future<void> _requestSenseGroups({required bool automatic}) async {
+    if (_senseGroupState == ContentLoadState.loading) {
+      AppLogger.log(
+        'SentenceAnnotation',
+        '意群请求跳过: source=${automatic ? 'auto' : 'user'} reason=loading',
+      );
+      return;
+    }
+    if (automatic && widget.senseGroupResult != null) {
+      AppLogger.log('SentenceAnnotation', '意群自动加载跳过: reason=hasContent');
+      return;
+    }
+    final request = widget.onRequestSenseGroups;
+    if (request == null) {
+      AppLogger.log(
+        'SentenceAnnotation',
+        '意群请求跳过: source=${automatic ? 'auto' : 'user'} reason=noCallback',
+      );
+      return;
+    }
+
+    setState(() => _senseGroupState = ContentLoadState.loading);
+    _notifyToolbar();
+    try {
+      await request(
+        automatic
+            ? SentenceAiRequestSource.automatic
+            : SentenceAiRequestSource.userTap,
+      );
+      if (!mounted) return;
       // 请求完成后，父组件已通过 setState 将 senseGroupResult 传入。
       // 显式进入 medium 模式（不依赖 didUpdateWidget 的时序）。
-      if (mounted &&
-          widget.senseGroupResult != null &&
+      if (widget.senseGroupResult != null &&
           widget.senseGroupResult!.medium.isNotEmpty) {
-        setState(() => _senseGroupMode = SenseGroupMode.medium);
+        setState(() {
+          _senseGroupMode = SenseGroupMode.medium;
+          _senseGroupState = ContentLoadState.loaded;
+        });
         AppLogger.log('SenseGroup', 'API 返回后进入 medium 模式');
         widget.onSenseGroupModeChanged?.call(widget.senseGroupResult!.medium);
-        _notifyToolbar();
+      } else {
+        setState(() => _senseGroupState = ContentLoadState.idle);
       }
+      _notifyToolbar();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _senseGroupState = ContentLoadState.idle);
+      _notifyToolbar();
+      if (!automatic) rethrow;
     }
   }
 
@@ -837,6 +900,7 @@ class SentenceAnnotationCardState extends State<SentenceAnnotationCard> {
       iconColor: Colors.orange.shade700,
       isActive: showSenseGroupBlocks,
       isDisabled: !_isSenseGroupEnabled,
+      isLoading: _senseGroupState == ContentLoadState.loading,
       onPressed: _onTapSenseGroup,
     );
 
@@ -882,40 +946,28 @@ class SentenceAnnotationCardState extends State<SentenceAnnotationCard> {
             onTapGroupWithRect: widget.onTapGroupWithRect,
             highlightedSegments: widget.highlightedSegments,
           )
-        : GestureDetector(
-            onLongPressStart: (details) => TextContextMenu.show(
-              context,
-              details.globalPosition,
-              widget.text,
+        : SelectableSentenceText(
+            text: widget.text,
+            style: theme.textTheme.titleMedium?.copyWith(
+              height: 1.6,
+              color: theme.colorScheme.onSurface,
             ),
-            onSecondaryTapDown: (details) => TextContextMenu.show(
-              context,
-              details.globalPosition,
-              widget.text,
+            highlightedSegments: widget.highlightedSegments,
+            origin: DictionaryLookupOrigin(
+              audioItemId: widget.audioItemId,
+              sentenceIndex: widget.sentenceIndex,
+              sentenceText: widget.text,
+              sentenceStartMs: widget.sentenceStartMs,
+              sentenceEndMs: widget.sentenceEndMs,
             ),
-            child: SelectableSentenceText(
-              text: widget.text,
-              style: theme.textTheme.titleMedium?.copyWith(
-                height: 1.6,
-                color: theme.colorScheme.onSurface,
-              ),
-              highlightedSegments: widget.highlightedSegments,
-              origin: DictionaryLookupOrigin(
-                audioItemId: widget.audioItemId,
-                sentenceIndex: widget.sentenceIndex,
-                sentenceText: widget.text,
-                sentenceStartMs: widget.sentenceStartMs,
-                sentenceEndMs: widget.sentenceEndMs,
-              ),
-              onBeforeLookup: () => widget.onToolbarButtonTapped?.call(),
-            ),
+            onBeforeLookup: () => widget.onToolbarButtonTapped?.call(),
           );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 句子文本 — 意群色块模式或纯 RichText（带长按/右键复制整句）。
-        // 顶部留白给选区手柄圆点让位；底部收紧，让译文紧跟原句。
+        // 句子文本 — 意群色块模式或系统可选文本。
+        // 底部收紧，让译文紧跟原句。
         _wrapGuide(
           widget.sentenceGuideStep,
           Padding(

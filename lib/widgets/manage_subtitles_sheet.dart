@@ -16,6 +16,7 @@ import '../features/subscription/providers/ai_trial_usage_provider.dart';
 import '../features/subscription/providers/feature_access_provider.dart';
 import '../features/subscription/providers/subscription_controller.dart';
 import '../features/subscription/widgets/feature_gate.dart';
+import '../features/remote_config/remote_config_providers.dart';
 import '../features/usage/usage_event.dart';
 import '../features/usage/usage_providers.dart';
 import '../models/audio_item.dart';
@@ -32,15 +33,15 @@ import '../providers/local_transcription_model_provider.dart';
 import '../providers/offline_asr_settings_provider.dart';
 import '../l10n/app_localizations.dart';
 import '../router/app_router.dart';
+import '../services/app_logger.dart';
 import '../services/asr/asr_model_manager.dart';
 import '../services/asr/offline_asr_engine.dart';
 import '../services/subtitle_parser.dart';
 import 'asr_download_prompt_dialog.dart';
 import '../theme/app_theme.dart';
-import '../models/word_timestamp.dart';
-import '../utils/synthetic_word_timestamps.dart';
+import '../utils/audio_duration.dart';
+import '../utils/file_size.dart';
 import '../utils/transcript_picker.dart';
-import '../utils/transcript_stats.dart';
 import 'common/anchored_bubble.dart';
 import 'guide_flow.dart';
 
@@ -57,6 +58,16 @@ class _InlineError {
   const _InlineError(this.kind, this.message);
 }
 
+class _AudioDiagnosticInfo {
+  const _AudioDiagnosticInfo({
+    required this.fileSizeText,
+    required this.durationText,
+  });
+
+  final String fileSizeText;
+  final String durationText;
+}
+
 /// 管理字幕底部弹窗
 ///
 /// 遵循 EditTagMembershipSheet 布局模式：
@@ -65,7 +76,16 @@ class ManageSubtitlesSheet extends ConsumerStatefulWidget {
   /// 要管理字幕的音频项
   final AudioItem audioItem;
 
-  const ManageSubtitlesSheet({super.key, required this.audioItem});
+  /// 字幕内容选择器。
+  ///
+  /// 生产环境使用系统文件选择器；测试可注入失败或固定内容，避免依赖平台 channel。
+  final Future<TranscriptDecodeResult?> Function()? transcriptContentPicker;
+
+  const ManageSubtitlesSheet({
+    super.key,
+    required this.audioItem,
+    this.transcriptContentPicker,
+  });
 
   @override
   ConsumerState<ManageSubtitlesSheet> createState() =>
@@ -146,11 +166,14 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
     super.dispose();
   }
 
-  /// 显示内联错误条，5 秒后自动消失。重复触发会重置倒计时。
+  /// 显示内联错误条，12 秒后自动消失。重复触发会重置倒计时。
+  ///
+  /// 文件系统异常通常包含路径、errno 和平台返回信息，保留更长时间方便用户截图
+  /// 或打开日志页导出。
   void _showInlineError(_InlineError err) {
     _errorClearTimer?.cancel();
     setState(() => _error = err);
-    _errorClearTimer = Timer(const Duration(seconds: 5), () {
+    _errorClearTimer = Timer(const Duration(seconds: 12), () {
       if (!mounted) return;
       setState(() => _error = null);
     });
@@ -204,6 +227,7 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
     // 是否有进行中的任务
     final isTaskActive =
         taskState is TranscriptionHashing ||
+        taskState is TranscriptionCompressing ||
         taskState is TranscriptionUploading ||
         taskState is TranscriptionProcessing ||
         isLocalTaskActive;
@@ -439,6 +463,10 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
       icon = Icons.fingerprint;
       text = l10n.transcriptionUploading; // 对用户统一显示"上传中"
       iconColor = theme.colorScheme.primary;
+    } else if (taskState is TranscriptionCompressing) {
+      icon = Icons.compress;
+      text = l10n.transcriptionCompressing;
+      iconColor = theme.colorScheme.primary;
     } else if (taskState is TranscriptionUploading) {
       icon = Icons.cloud_upload;
       text = l10n.transcriptionUploading;
@@ -566,6 +594,8 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
       'connection' => l10n.transcriptionErrorConnection,
       'timeout' => l10n.transcriptionErrorTimeout,
       'server' => l10n.transcriptionErrorServer,
+      'compression' => l10n.transcriptionErrorCompression,
+      'fileTooLarge' => l10n.transcriptionErrorCompressedFileTooLarge,
       _ => l10n.transcriptionErrorUnknown,
     };
   }
@@ -617,8 +647,12 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
           ),
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 17, color: accent),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(icon, size: 17, color: accent),
+            ),
             const SizedBox(width: AppSpacing.s),
             Expanded(
               child: Text.rich(
@@ -631,22 +665,26 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
                     TextSpan(text: ' · ${err.message}'),
                   ],
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: colorScheme.error,
                   height: 1.25,
                 ),
               ),
             ),
-            IconButton(
-              onPressed: _dismissInlineError,
-              icon: const Icon(Icons.close, size: 18),
-              color: colorScheme.error,
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: IconButton(
+                onPressed: _dismissInlineError,
+                icon: const Icon(Icons.close, size: 18),
+                color: colorScheme.error,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 28,
+                  height: 28,
+                ),
+                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+              ),
             ),
           ],
         ),
@@ -1568,7 +1606,7 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
     }
   }
 
-  /// 处理本地（离线）转录：确认覆盖/疑似空音频 → 门控下载模型 → 启动后台任务。
+  /// 处理本地（离线）转录：确认覆盖/异常音频 → 门控下载模型 → 启动后台任务。
   ///
   /// 无需登录、无云端大小/时长限制。
   Future<void> _handleOfflineTranscription(
@@ -1577,26 +1615,15 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
   ) async {
     final l10n = AppLocalizations.of(context)!;
 
-    // 疑似空音频确认（与 AI 转录一致，用确认而非硬拦截）。
-    if (audioItem.contentStatus == AudioContentStatus.suspectEmpty) {
-      final proceed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(l10n.transcriptionSilentConfirmTitle),
-          content: Text(l10n.transcriptionSilentConfirmMessage),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(l10n.transcriptionSilentConfirmProceed),
-            ),
-          ],
-        ),
+    // 内容异常确认（与 AI 转录一致，用确认而非硬拦截）。
+    if (audioItem.contentStatus case final status?
+        when status != AudioContentStatus.ok) {
+      final proceed = await _showContentStatusConfirmDialog(
+        context,
+        audioItem,
+        status,
       );
-      if (proceed != true || !context.mounted) return;
+      if (!proceed || !context.mounted) return;
     }
 
     // 已有字幕时弹出覆盖确认。
@@ -1672,37 +1699,41 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
     }
 
     try {
-      final content = await pickTranscriptContent();
-      if (content == null) return;
-
-      final stats = await getTranscriptStatsFromSrt(content);
-
-      // 本地字幕没有真实词级时间戳，保存时按字符长度生成近似词级时间戳。
-      final wordTimestampsJson = encodeWordTimestamps(
-        await generateSyntheticWordTimestampsFromSrt(content),
+      AppLogger.log(
+        'SubtitleUpload',
+        'start local upload audioId=${audioItem.id} name=${audioItem.name}',
+      );
+      final contentPicker =
+          widget.transcriptContentPicker ?? pickTranscriptContentWithMetadata;
+      final transcript = await contentPicker();
+      if (transcript == null) {
+        AppLogger.log(
+          'SubtitleUpload',
+          'canceled local upload audioId=${audioItem.id}',
+        );
+        return;
+      }
+      AppLogger.log(
+        'SubtitleUpload',
+        'picked transcript audioId=${audioItem.id} '
+            'charset=${transcript.charset} ext=${transcript.ext} '
+            'chars=${transcript.text.length}',
       );
 
-      // 字幕内容 + 近似词级时间戳原子写入 DB；transcriptPath 置 null。
-      await ref
-          .read(audioItemDaoProvider)
-          .saveTranscriptContent(
-            audioItem.id,
-            srt: content,
-            wordTimestampsJson: wordTimestampsJson,
-          );
+      // 按音频时长把字幕（srt/vtt/lrc）规范化为 SRT 并原子入库
+      // （含统计与近似词级时间戳、来源标记）。
+      await importLocalSubtitle(
+        ref,
+        audioItem,
+        text: transcript.text,
+        ext: transcript.ext,
+      );
+      AppLogger.log(
+        'SubtitleUpload',
+        'saved & updated transcript audioId=${audioItem.id}',
+      );
 
       if (!context.mounted) return;
-      ref
-          .read(audioLibraryProvider.notifier)
-          .updateAudioItem(
-            audioItem.copyWith(
-              transcriptPath: null,
-              sentenceCount: stats.$1,
-              wordCount: stats.$2,
-              transcriptSource: TranscriptSource.local,
-              transcriptLanguage: null,
-            ),
-          );
 
       ref
           .read(usageTrackerProvider)
@@ -1713,8 +1744,16 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
               EventParams.audioName: audioItem.name,
             },
           );
+      AppLogger.log(
+        'SubtitleUpload',
+        'completed local upload audioId=${audioItem.id}',
+      );
       if (context.mounted) Navigator.pop(context);
     } on SubtitleParseException catch (e) {
+      AppLogger.log(
+        'SubtitleUpload',
+        'parse failed audioId=${audioItem.id} kind=${e.kind} detail=${e.detail}',
+      );
       if (!mounted) return;
       final kind = switch (e.kind) {
         SubtitleParseErrorKind.unsupportedFormat =>
@@ -1723,7 +1762,13 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
         SubtitleParseErrorKind.empty => _UploadErrorKind.empty,
       };
       _showInlineError(_InlineError(kind, subtitleParseErrorMessage(l10n, e)));
-    } catch (e) {
+    } catch (e, st) {
+      AppLogger.log(
+        'SubtitleUpload',
+        'failed local upload audioId=${audioItem.id} '
+            'errorType=${e.runtimeType} error=$e',
+      );
+      AppLogger.log('SubtitleUpload', st.toString());
       if (!mounted) return;
       _showInlineError(
         _InlineError(
@@ -1733,12 +1778,6 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
       );
     }
   }
-
-  /// AI 转录文件大小上限（50MB）
-  static const _maxFileSize = 50 * 1024 * 1024;
-
-  /// AI 转录时长上限（30 分钟）
-  static const _maxDurationSeconds = 30 * 60;
 
   /// 处理 AI 转录
   Future<void> _handleAiTranscription(
@@ -1762,18 +1801,20 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
       return;
     }
 
+    final limits = ref.read(remoteTranscriptionLimitsProvider);
+
     // 检查时长限制
-    if (audioItem.totalDuration > _maxDurationSeconds) {
+    if (audioItem.totalDuration > limits.maxDurationSeconds) {
       _showInlineError(
         _InlineError(
           _UploadErrorKind.generic,
-          l10n.transcriptionErrorTooLong(30),
+          l10n.transcriptionErrorTooLong(limits.maxDurationMinutesForDisplay),
         ),
       );
       return;
     }
 
-    // 检查文件大小限制
+    // 读取文件只确认路径可用；体积判断由任务层处理，超过 25MiB 时会先压缩。
     final fullPath = await audioItem.getFullAudioPath();
     if (fullPath == null) {
       if (!mounted) return;
@@ -1782,39 +1823,16 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
       );
       return;
     }
-    final fileSize = await File(fullPath).length();
-    if (!mounted) return;
-    if (fileSize > _maxFileSize) {
-      _showInlineError(
-        _InlineError(
-          _UploadErrorKind.generic,
-          l10n.transcriptionErrorFileTooLarge(50),
-        ),
-      );
-      return;
-    }
-
-    // 疑似空音频（解码失败 / 全程静音）拦截：用确认而非硬拦截，规避检测误判
-    if (audioItem.contentStatus == AudioContentStatus.suspectEmpty) {
+    // 内容异常（损坏 / 静音）确认：用确认而非硬拦截，给用户保留继续转录入口。
+    if (audioItem.contentStatus case final status?
+        when status != AudioContentStatus.ok) {
       if (!context.mounted) return;
-      final proceed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(l10n.transcriptionSilentConfirmTitle),
-          content: Text(l10n.transcriptionSilentConfirmMessage),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(l10n.transcriptionSilentConfirmProceed),
-            ),
-          ],
-        ),
+      final proceed = await _showContentStatusConfirmDialog(
+        context,
+        audioItem,
+        status,
       );
-      if (proceed != true) return;
+      if (!proceed) return;
     }
 
     // 已有字幕时弹出覆盖确认
@@ -1865,6 +1883,89 @@ class _ManageSubtitlesSheetState extends ConsumerState<ManageSubtitlesSheet> {
             EventParams.audioName: audioItem.name,
           },
         );
+  }
+
+  Future<bool> _showContentStatusConfirmDialog(
+    BuildContext context,
+    AudioItem audioItem,
+    AudioContentStatus status,
+  ) async {
+    final l10n = AppLocalizations.of(context)!;
+    final info = await _loadAudioDiagnosticInfo(audioItem);
+    if (!context.mounted) return false;
+    final title = switch (status) {
+      AudioContentStatus.damaged => l10n.transcriptionDamagedConfirmTitle,
+      AudioContentStatus.silent => l10n.transcriptionSilentConfirmTitle,
+      AudioContentStatus.ok => l10n.transcriptionSilentConfirmTitle,
+    };
+    final message = switch (status) {
+      AudioContentStatus.damaged => l10n.transcriptionDamagedConfirmMessage,
+      AudioContentStatus.silent => l10n.transcriptionSilentConfirmMessage,
+      AudioContentStatus.ok => l10n.transcriptionSilentConfirmMessage,
+    };
+
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            const SizedBox(height: 12),
+            Text(l10n.transcriptionAudioFileSize(info.fileSizeText)),
+            Text(l10n.transcriptionAudioDuration(info.durationText)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.transcriptionSilentConfirmProceed),
+          ),
+        ],
+      ),
+    );
+    return proceed == true;
+  }
+
+  Future<_AudioDiagnosticInfo> _loadAudioDiagnosticInfo(
+    AudioItem audioItem,
+  ) async {
+    final l10n = AppLocalizations.of(context)!;
+    final fullPath = await audioItem.getFullAudioPath();
+    final fileSizeText = fullPath == null
+        ? l10n.transcriptionAudioUnknown
+        : await _formatExistingFileSize(fullPath, l10n);
+    final durationSeconds = audioItem.totalDuration > 0
+        ? audioItem.totalDuration
+        : audioItem.audioPath == null
+        ? 0
+        : await getAudioDurationSeconds(audioItem.audioPath!);
+    final durationText = durationSeconds > 0
+        ? SubtitleParser.formatDuration(Duration(seconds: durationSeconds))
+        : l10n.transcriptionAudioUnknown;
+    return _AudioDiagnosticInfo(
+      fileSizeText: fileSizeText,
+      durationText: durationText,
+    );
+  }
+
+  Future<String> _formatExistingFileSize(
+    String fullPath,
+    AppLocalizations l10n,
+  ) async {
+    try {
+      final file = File(fullPath);
+      if (!await file.exists()) return l10n.transcriptionAudioUnknown;
+      return formatBytes(await file.length());
+    } catch (_) {
+      return l10n.transcriptionAudioUnknown;
+    }
   }
 
   /// 展示 AI 转录登录引导弹窗。

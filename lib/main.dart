@@ -25,7 +25,7 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 import 'config/api_config.dart';
 import 'config/auth_config.dart' as auth_config;
 import 'config/revenuecat_config.dart' as revenuecat_config;
-import 'config/web_purchase_config.dart' as web_purchase_config;
+import 'config/paddle_config.dart' as paddle_config;
 import 'providers/review_reminder_provider.dart';
 import 'services/notification_tap_router_bridge.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -62,6 +62,8 @@ import 'features/official_collections/download/official_download_notifier.dart';
 import 'features/onboarding_survey/data/onboarding_survey_storage.dart';
 import 'features/onboarding_survey/providers/onboarding_survey_provider.dart';
 import 'features/auth/providers/auth_providers.dart';
+import 'features/remote_config/remote_config_providers.dart';
+import 'features/remote_config/remote_config_service.dart';
 import 'features/subscription/providers/subscription_controller.dart';
 import 'features/subscription/providers/subscription_plans_provider.dart';
 
@@ -87,6 +89,13 @@ void main() async {
   // 检查是否处于演示模式
   final prefs = await SharedPreferences.getInstance();
   final isDemoMode = prefs.getBool('demo_mode') ?? false;
+
+  // 远程配置：启动期只同步读取本地缓存/默认值，不触发网络请求，避免网络慢阻塞首帧。
+  // 下游 UI 只读取 provider 暴露的 resolved config；远端刷新由 MainShell 首帧后后台执行。
+  final initialRemoteConfig = RemoteConfigService.create(
+    prefs: prefs,
+    appVersion: packageInfo.version,
+  ).loadInitialFromCache();
 
   // 首次启动检测：哨兵 key `first_launch_done` 不存在即视为首次启动，
   // 立即写入 true。后续所有启动都会读到该 key = true，即非首启。
@@ -207,10 +216,10 @@ void main() async {
     // 本地 StoreKit 测试模式：**不初始化 RevenueCat**，购买走 in_app_purchase
     // 直连 .storekit，避免本地交易被 RC SDK 捕获上报（不污染 RC Sandbox）。
     AppLogger.log('App', '本地 StoreKit 测试模式：跳过 RevenueCat 初始化');
-  } else if (web_purchase_config.isWebCheckoutConfigured) {
-    // 网页支付渠道（侧载 APK / 桌面）：无可用 RC 原生 SDK，购买走浏览器结账、
+  } else if (paddle_config.isPaddleCheckoutChannel) {
+    // direct 渠道（侧载 APK / 桌面）：不初始化 RC，购买走 Paddle Checkout、
     // 权益经后端 /api/entitlements 读回，**不初始化 RevenueCat SDK**。
-    AppLogger.log('App', '网页支付渠道：跳过 RevenueCat 初始化（权益经后端读回）');
+    AppLogger.log('App', 'Paddle direct 渠道：跳过 RevenueCat 初始化（权益经后端读回）');
   } else if (revenuecat_config.isRevenueCatConfigured) {
     try {
       // Debug 构建打开 RevenueCat 详细日志，便于定位 Offerings 为空等问题。
@@ -369,6 +378,7 @@ void main() async {
           initialAiTranscriptionAutoMergeEnabledProvider.overrideWithValue(
             initialAiTranscriptionAutoMergeEnabled,
           ),
+          initialRemoteConfigProvider.overrideWithValue(initialRemoteConfig),
           if (recommendedAsrModel != null)
             recommendedAsrModelProvider.overrideWithValue(recommendedAsrModel),
           if (initialOfflineAsrSettingsState != null)
@@ -488,9 +498,13 @@ class _EchoLoopAppState extends ConsumerState<EchoLoopApp>
     switch (state) {
       case AppLifecycleState.resumed:
         _triggerCatalogSync();
-        // 回前台时重对账订阅权益：用户可能刚在系统订阅页退订 / 换 plan / 续费，
-        // 或退款生效。RevenueCat 有约 5 分钟缓存，频繁切前台基本命中缓存、近零成本。
-        unawaited(ref.read(subscriptionControllerProvider.notifier).refresh());
+        // 回前台时条件重对账订阅权益（E8）。单一来源下每次刷新都是真实后端请求
+        // （不再有 RC SDK 客户端缓存兜着），且退款/退订分歧主要靠 E6/E7 在后端
+        // 交互时被动收敛，故仅在状态陈旧 / 越过到期点 / 超过 24h 新鲜窗（兜住
+        // 长期无后端流量的用户）时才回源，频繁切前台不盲查。
+        unawaited(
+          ref.read(subscriptionControllerProvider.notifier).refreshIfStale(),
+        );
         // 同时检查商店 storefront。跨区时立即撤下旧币种价格并重新读取商品；
         // 同区则遵循五分钟 TTL，避免每次短暂切后台都重复查询。
         unawaited(

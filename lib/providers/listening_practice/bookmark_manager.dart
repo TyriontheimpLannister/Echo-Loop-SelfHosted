@@ -73,18 +73,6 @@ class BookmarkManager {
     }
   }
 
-  /// 自动添加 [] 包裹的句子为书签
-  static Set<int> autoAddBracketBookmarks(List<Sentence> sentences) {
-    final bookmarks = <int>{};
-    for (var sentence in sentences) {
-      final text = sentence.text.trim();
-      if (text.startsWith('[') && text.endsWith(']')) {
-        bookmarks.add(sentence.index);
-      }
-    }
-    return bookmarks;
-  }
-
   /// 更新句子的书签状态
   static void updateSentenceBookmarkStatus(
     List<Sentence> sentences,

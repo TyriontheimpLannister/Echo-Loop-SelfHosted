@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../database/enums.dart';
+import '../features/chatbot/widgets/sentence_chat_button.dart';
 import '../l10n/app_localizations.dart';
 import '../models/speech_practice_models.dart';
 import '../utils/playback_speed.dart';
@@ -291,6 +292,17 @@ class _BookmarkReviewScreenState extends ConsumerState<BookmarkReviewScreen>
                 onPressed: _handleExit,
               ),
               actions: [
+                // AI 助手入口：打开前暂停自动推进（同设置按钮的处理）。
+                SentenceChatButton(
+                  sentenceText: currentSentence?.text ?? '',
+                  onBeforeOpen: () {
+                    if (playerState.isAnnotationMode) {
+                      player.repeatEngine?.onUserInteraction();
+                    } else {
+                      player.enterWaitingForUserInBlindMode();
+                    }
+                  },
+                ),
                 IconButton(
                   icon: const Icon(Icons.tune),
                   onPressed: () {

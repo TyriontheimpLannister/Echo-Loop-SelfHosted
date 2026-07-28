@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:universal_io/io.dart' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
 import '../l10n/app_localizations.dart';
 import '../models/audio_item.dart';
@@ -16,6 +15,7 @@ import '../providers/audio_engine/audio_engine_provider.dart';
 import '../providers/collection_provider.dart';
 import '../providers/sentence_ai_provider.dart';
 import '../router/app_router.dart';
+import '../services/app_logger.dart';
 import '../services/subtitle_parser.dart';
 import '../theme/app_theme.dart';
 import '../widgets/playback_controls.dart';
@@ -673,8 +673,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return;
     }
 
-    await context.push(
-      AppRoutes.sentenceDetail,
+    AppLogger.log(
+      'Navigation',
+      'player push sentence-detail audio=${audioItem.id} '
+          'sentence=${sentence.index}',
+    );
+    await AppRoutes.pushNested(
+      context,
+      AppRoutes.sentenceDetailSegment,
       extra: SentenceDetailArgs(
         audioItemId: audioItem.id,
         audioName: audioItem.name,
@@ -683,6 +689,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         startTimeMs: sentence.startTime.inMilliseconds,
         endTimeMs: sentence.endTime.inMilliseconds,
       ),
+    );
+    AppLogger.log(
+      'Navigation',
+      'player returned from sentence-detail audio=${audioItem.id} '
+          'sentence=${sentence.index} mounted=$mounted',
     );
 
     _isNavigatingToDetail = false;

@@ -1,6 +1,7 @@
 import AVFoundation
 import Cocoa
 import CoreAudio
+import Darwin
 import FlutterMacOS
 import NaturalLanguage
 import Speech
@@ -1289,6 +1290,48 @@ final class MacAudioDecodeHandler: NSObject {
       "sampleRate": Int(autoAlignTargetSampleRate.rounded()),
       "pcmBytes": FlutterStandardTypedData(bytes: pcmBytes)
     ]
+  }
+}
+
+final class MacDeviceInfoHandler {
+  private let methodChannel: FlutterMethodChannel
+
+  init(binaryMessenger: FlutterBinaryMessenger) {
+    methodChannel = FlutterMethodChannel(
+      name: "top.echo-loop/device_info",
+      binaryMessenger: binaryMessenger
+    )
+    methodChannel.setMethodCallHandler(handle)
+  }
+
+  private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "getDeviceInfo":
+      result(deviceInfo())
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func deviceInfo() -> [String: Any] {
+    let processInfo = ProcessInfo.processInfo
+    return [
+      "modelIdentifier": modelIdentifier(),
+      "systemName": "macOS",
+      "systemVersion": processInfo.operatingSystemVersionString,
+      "processorCount": processInfo.processorCount,
+      "activeProcessorCount": processInfo.activeProcessorCount,
+      "physicalMemory": Int64(processInfo.physicalMemory)
+    ]
+  }
+
+  private func modelIdentifier() -> String {
+    var size = 0
+    sysctlbyname("hw.model", nil, &size, nil, 0)
+    guard size > 0 else { return "" }
+    var machine = [CChar](repeating: 0, count: size)
+    sysctlbyname("hw.model", &machine, &size, nil, 0)
+    return String(cString: machine)
   }
 }
 

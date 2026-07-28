@@ -20,12 +20,14 @@ import '../features/auth/screens/password_sign_in_screen.dart';
 import '../features/auth/providers/auth_providers.dart';
 import '../features/official_collections/screens/discover_collections_screen.dart';
 import '../features/official_collections/screens/official_collection_detail_screen.dart';
-import '../features/official_collections/screens/official_podcast_list_screen.dart';
-import '../features/official_collections/screens/official_podcast_preview_screen.dart';
+import '../features/podcast/podcast_models.dart';
+import '../features/podcast/screens/podcast_discovery_screen.dart';
+import '../features/podcast/screens/podcast_preview_screen.dart';
 import '../features/onboarding_survey/providers/onboarding_survey_provider.dart';
 import '../features/onboarding_survey/screens/onboarding_survey_screen.dart';
 import '../features/subtitle_editor/subtitle_simple_editor_screen.dart';
 import '../models/audio_item.dart';
+import '../services/app_logger.dart';
 import '../screens/library_screen.dart';
 import '../screens/collection_detail_screen.dart';
 import '../screens/study_screen.dart';
@@ -63,9 +65,11 @@ abstract class AppRoutes {
   static const passwordSignIn = '/login/password';
   static const account = '/account';
 
-  static const discoverPodcasts = '/discover/podcasts';
-  static String discoverPodcastPreview(String podcastId) =>
-      '/discover/podcasts/$podcastId';
+  /// Podcast 搜索与订阅统一页（全屏，两个入口共用）。
+  static const podcastSubscribe = '/podcast-subscribe';
+
+  /// Podcast 单集预览页路径段（挂在 [podcastSubscribe] 之下的相对子路由）。
+  static const podcastPreviewSegment = 'preview';
 
   /// 合集详情页路径
   static String collectionDetail(String collectionId) =>
@@ -126,11 +130,11 @@ abstract class AppRoutes {
   /// 收藏句子复习页路径
   static const bookmarkReview = '/bookmark-review';
 
-  /// 句子详情页路径（通用）
-  static const sentenceDetail = '/sentence-detail';
+  /// 句子详情页路径段（挂在各播放页 / 收藏页之下的相对子路由）
+  static const sentenceDetailSegment = 'sentence-detail';
 
-  /// 学习材料 PDF 导出预览页路径
-  static const pdfPreview = '/pdf-preview';
+  /// 学习材料 PDF 导出预览页路径段（挂在计划页 / 合集页之下的相对子路由）
+  static const pdfPreviewSegment = 'pdf-preview';
   static const backupRestore = '/backup-restore';
 
   /// Flashcard 单词卡片复习页路径
@@ -150,12 +154,81 @@ abstract class AppRoutes {
 
   /// 订阅计划介绍 / 购买页（Paywall）
   static const paywall = '/paywall';
+
+  /// 在「当前路由位置之下」push 一个全屏子页。
+  ///
+  /// 使子页 URL 携带完整入口栈（如 `/collections/c/a/player/sentence-detail`），
+  /// 避免框架以 null state 按 URI 重解析时把 shell 分支塌回资源库根、返回时多退
+  /// （§7.17）。子页必须已声明为当前路由的子路由，否则 go_router 抛「no route」，
+  /// 把静默偶发 bug 变成即时可见错误。
+  ///
+  /// [segment] 传相对路径段（如 [sentenceDetailSegment]），[extra] 透传给子页。
+  static Future<T?> pushNested<T extends Object?>(
+    BuildContext context,
+    String segment, {
+    Object? extra,
+  }) {
+    // matchedLocation 为已解析、不含 query 的当前路由路径。
+    final base = GoRouterState.of(context).matchedLocation;
+    final sep = base.endsWith('/') ? '' : '/';
+    return context.push<T>('$base$sep$segment', extra: extra);
+  }
+
+  /// 挂载路由 path 调试日志，记录 GoRouter 每次完成导航后的最终 URI。
+  ///
+  /// 直接监听 [GoRouter.routeInformationProvider]，能覆盖 `go` / `push` / `pop`
+  /// 以及 StatefulShellRoute 重解析后的最终地址；返回值用于 Provider dispose 时解绑。
+  static VoidCallback attachNavigationPathLogger(GoRouter router) {
+    String? lastUri;
+
+    void logCurrentRoute() {
+      final uri = router.routeInformationProvider.value.uri;
+      final uriText = uri.toString();
+      if (uriText == lastUri) return;
+      lastUri = uriText;
+      AppLogger.log('Navigation', 'path=${uri.path} uri=$uriText');
+    }
+
+    router.routeInformationProvider.addListener(logCurrentRoute);
+    logCurrentRoute();
+    return () =>
+        router.routeInformationProvider.removeListener(logCurrentRoute);
+  }
 }
+
+/// 句子讲解页子路由工厂。
+///
+/// 挂在各播放页（随心听 / 盲听 / 复述）与收藏页之下，路径为相对段
+/// [AppRoutes.sentenceDetailSegment]，仍带 rootNavigatorKey 全屏无 tab bar。
+/// 嵌套使其 URL 携带完整入口栈，避免 §7.17 重解析塌栈。
+///
+/// extra 在 Android Activity 重建等场景恢复时不可序列化 → 可能为 null；此时
+/// 无法重建自身内容，交由 [_RestoredRoutePopper] 首帧退回已重建的入口页。
+GoRoute _sentenceDetailRoute() => GoRoute(
+  path: AppRoutes.sentenceDetailSegment,
+  parentNavigatorKey: rootNavigatorKey,
+  builder: (context, state) {
+    final args = state.extra;
+    if (args is! SentenceDetailArgs) return const _RestoredRoutePopper();
+    return SentenceDetailScreen(args: args);
+  },
+);
+
+/// PDF 导出预览页子路由工厂。挂在计划页 / 合集页 / 资源库之下，同上说明。
+GoRoute _pdfPreviewRoute() => GoRoute(
+  path: AppRoutes.pdfPreviewSegment,
+  parentNavigatorKey: rootNavigatorKey,
+  builder: (context, state) {
+    final item = state.extra;
+    if (item is! AudioItem) return const _RestoredRoutePopper();
+    return PdfPreviewScreen(audioItem: item);
+  },
+);
 
 /// GoRouter Provider（keepAlive，不可 invalidate）
 final appRouterProvider = Provider<GoRouter>((ref) {
   final analyticsService = ref.read(analyticsServiceProvider);
-  return GoRouter(
+  final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: AppRoutes.study,
     observers: [AnalyticsObserver(analyticsService)],
@@ -192,6 +265,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 path: '/collections',
                 builder: (context, state) => const LibraryScreen(),
                 routes: [
+                  _pdfPreviewRoute(),
                   GoRoute(
                     path: ':collectionId',
                     builder: (context, state) {
@@ -209,6 +283,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     // 自动多退一层。嵌套后该层级由 URI 自身表达，重解析不再丢失。
                     // 详见 CLAUDE.md §7.17。
                     routes: [
+                      _pdfPreviewRoute(),
                       GoRoute(
                         path: ':audioId/plan',
                         parentNavigatorKey: rootNavigatorKey,
@@ -224,11 +299,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                             autoStart: autoStart,
                           );
                         },
+                        routes: [_pdfPreviewRoute()],
                       ),
                       GoRoute(
                         path: ':audioId/player',
                         parentNavigatorKey: rootNavigatorKey,
                         builder: (context, state) => const PlayerScreen(),
+                        routes: [_sentenceDetailRoute()],
                       ),
                       GoRoute(
                         path: ':audioId/blind-listen',
@@ -242,6 +319,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                             audioItemId: audioId,
                           );
                         },
+                        routes: [_sentenceDetailRoute()],
                       ),
                       GoRoute(
                         path: ':audioId/intensive-listen',
@@ -281,6 +359,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                             audioItemId: audioId,
                           );
                         },
+                        routes: [_sentenceDetailRoute()],
                       ),
                       GoRoute(
                         path: ':audioId/review-difficult-practice',
@@ -314,6 +393,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/favorites',
                 builder: (context, state) => const FavoritesScreen(),
+                routes: [_sentenceDetailRoute()],
               ),
             ],
           ),
@@ -382,24 +462,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const BookmarkReviewScreen(),
       ),
-      // 句子详情（通用，全屏）
-      GoRoute(
-        path: '/sentence-detail',
-        parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) {
-          final args = state.extra! as SentenceDetailArgs;
-          return SentenceDetailScreen(args: args);
-        },
-      ),
-      // 学习材料 PDF 导出预览（全屏）
-      GoRoute(
-        path: '/pdf-preview',
-        parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) {
-          final audioItem = state.extra! as AudioItem;
-          return PdfPreviewScreen(audioItem: audioItem);
-        },
-      ),
+      // 句子详情 / PDF 预览已下沉为各入口页的嵌套子路由（§7.17），
+      // 见 _sentenceDetailRoute() / _pdfPreviewRoute() 的挂载点。
       // Flashcard 单词卡片复习（全屏）
       GoRoute(
         path: '/flashcard',
@@ -419,26 +483,34 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const DiscoverCollectionsScreen(),
         routes: [
           GoRoute(
-            path: 'podcasts',
-            parentNavigatorKey: rootNavigatorKey,
-            builder: (context, state) => const OfficialPodcastListScreen(),
-            routes: [
-              GoRoute(
-                path: ':podcastId',
-                parentNavigatorKey: rootNavigatorKey,
-                builder: (context, state) {
-                  final podcastId = state.pathParameters['podcastId']!;
-                  return OfficialPodcastPreviewScreen(podcastId: podcastId);
-                },
-              ),
-            ],
-          ),
-          GoRoute(
             path: ':remoteId',
             parentNavigatorKey: rootNavigatorKey,
             builder: (context, state) {
               final remoteId = state.pathParameters['remoteId']!;
               return OfficialCollectionDetailScreen(remoteId: remoteId);
+            },
+          ),
+        ],
+      ),
+      // Podcast 搜索与订阅统一页（全屏），两个入口共用；单集预览下沉为
+      // 本页嵌套子路由，使 URL 自表达完整栈（§7.17）。
+      GoRoute(
+        path: AppRoutes.podcastSubscribe,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const PodcastDiscoveryScreen(),
+        routes: [
+          GoRoute(
+            path: AppRoutes.podcastPreviewSegment,
+            parentNavigatorKey: rootNavigatorKey,
+            // extra（PodcastPreviewArg）在 Android Activity 重建等重解析场景
+            // 不可序列化 → 可能为 null；此时交由 _RestoredRoutePopper 首帧
+            // 退回已重建的订阅页。
+            builder: (context, state) {
+              final arg = state.extra;
+              if (arg is! PodcastPreviewArg) {
+                return const _RestoredRoutePopper();
+              }
+              return PodcastPreviewScreen(arg: arg);
             },
           ),
         ],
@@ -456,11 +528,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             autoStart: autoStart,
           );
         },
+        routes: [_pdfPreviewRoute()],
       ),
       GoRoute(
         path: '/audio/:audioId/player',
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const PlayerScreen(),
+        routes: [_sentenceDetailRoute()],
       ),
       GoRoute(
         path: '/audio/:audioId/subtitles/edit',
@@ -483,6 +557,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             audioItemId: audioId,
           );
         },
+        routes: [_sentenceDetailRoute()],
       ),
       GoRoute(
         path: '/audio/:audioId/intensive-listen',
@@ -513,6 +588,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final audioId = state.pathParameters['audioId']!;
           return RetellPlayerScreen(collectionId: null, audioItemId: audioId);
         },
+        routes: [_sentenceDetailRoute()],
       ),
       GoRoute(
         path: '/audio/:audioId/review-difficult-practice',
@@ -527,4 +603,37 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+  final detachNavigationLogger = AppRoutes.attachNavigationPathLogger(router);
+  ref.onDispose(detachNavigationLogger);
+  return router;
 });
+
+/// 全屏子页在 extra 丢失（如 Android Activity 重建后按 URI 重解析、extra 不可序列化）
+/// 时的兜底占位：首帧退回栈中已重建的入口页，避免因缺参数崩溃或白屏卡死。
+class _RestoredRoutePopper extends StatefulWidget {
+  const _RestoredRoutePopper();
+
+  @override
+  State<_RestoredRoutePopper> createState() => _RestoredRoutePopperState();
+}
+
+class _RestoredRoutePopperState extends State<_RestoredRoutePopper> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final uri = GoRouter.of(context).routeInformationProvider.value.uri;
+      final canPop = context.canPop();
+      AppLogger.log(
+        'Navigation',
+        'restored-route-popper reason=missing-extra '
+            'path=${uri.path} uri=$uri canPop=$canPop',
+      );
+      if (canPop) context.pop();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => const Scaffold();
+}

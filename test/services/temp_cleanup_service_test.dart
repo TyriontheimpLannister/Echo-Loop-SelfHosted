@@ -156,6 +156,16 @@ void main() {
       expect(pdfDir.existsSync(), false);
     });
 
+    test('Library/Caches 删除 log_export_ 临时目录', () async {
+      final logDir = Directory('${fakeCacheDir.path}/log_export_123')
+        ..createSync();
+      File('${logDir.path}/app.log').writeAsBytesSync(List.filled(300, 0));
+
+      await cleanupAllTempFiles();
+
+      expect(logDir.existsSync(), false);
+    });
+
     test('Library/Caches 保护系统 URLCache 与框架缓存', () async {
       // 系统 URLCache：<bundleId>/Cache.db* 及散落的 Cache.db 文件
       final cacheDbFile = File('${fakeCacheDir.path}/Cache.db');
@@ -211,7 +221,11 @@ void main() {
       expect(freshDir.existsSync(), true);
     });
 
-    test('不触碰其他前缀与系统缓存（即使很旧）', () async {
+    test('删除旧 log_export_ 目录并保留其他前缀与系统缓存', () async {
+      final logDir = Directory('${fakeCacheDir.path}/log_export_1')
+        ..createSync();
+      File('${logDir.path}/app.log').writeAsBytesSync(List.filled(300, 0));
+      setDirMtime(logDir, DateTime.now().subtract(const Duration(days: 3)));
       final audioDir = Directory('${fakeCacheDir.path}/audio_export_7')
         ..createSync();
       File('${audioDir.path}/a.m4a').writeAsBytesSync(List.filled(200, 0));
@@ -224,6 +238,7 @@ void main() {
 
       await cleanupStalePdfExportTemp();
 
+      expect(logDir.existsSync(), false);
       expect(audioDir.existsSync(), true);
       expect(cacheDbFile.existsSync(), true);
     });

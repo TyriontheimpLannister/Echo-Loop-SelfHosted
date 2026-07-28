@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -64,6 +65,11 @@ import 'storage_browser_screen.dart';
 import 'reminder_settings_screen.dart';
 import '../config/api_config.dart';
 import '../widgets/app_update_dialog.dart';
+
+const double _settingsLeadingIconExtent = 32;
+const double _settingsSvgIconExtent = 26;
+const double _settingsBrandIconExtent = 20;
+const double _settingsMaterialIconExtent = 26;
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -148,7 +154,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       title: l10n.account,
       children: [
         ListTile(
-          leading: _emojiIcon('👤'),
+          leading: _settingsSvgIcon('assets/icon/account-1.svg'),
           title: Text(l10n.account),
           subtitle: accountSubtitle == null
               ? null
@@ -196,7 +202,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     const upgradeBadgeTextColor = Color(0xFF111111);
 
     return ListTile(
-      leading: Icon(Icons.workspace_premium, color: gold),
+      leading: _settingsSvgIcon('assets/icon/diamond.svg'),
       title: Text(l10n.premiumEntryTitle),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -284,7 +290,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       title: l10n.learningSection,
       children: [
         ListTile(
-          leading: _emojiIcon('🔔'),
+          leading: _settingsSvgIcon('assets/icon/bell.svg'),
           title: Text(l10n.reminderSettings),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -305,7 +311,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
         ListTile(
-          leading: _emojiIcon('📚'),
+          leading: _settingsSvgIcon('assets/icon/book-shelf.svg'),
           title: Text(l10n.learningSettings),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push(
@@ -316,7 +322,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         if (showAsr)
           ListTile(
-            leading: _emojiIcon('🎙️'),
+            leading: _settingsSvgIcon('assets/icon/microphone.svg'),
             title: Text(l10n.speechRecognition),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -339,7 +345,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
         ListTile(
-          leading: _emojiIcon('🔊'),
+          leading: _settingsSvgIcon('assets/icon/speaker.svg'),
           title: Text(l10n.ttsSettings),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -357,7 +363,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
         ListTile(
-          leading: _emojiIcon('▶️'),
+          leading: _settingsSvgIcon('assets/icon/play-pause.svg'),
           title: Text(l10n.playbackSettings),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push(
@@ -367,7 +373,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
         ListTile(
-          leading: _emojiIcon('📖'),
+          leading: _settingsSvgIcon('assets/icon/locale-1.svg'),
           title: Text(l10n.dictionarySettings),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -412,13 +418,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       title: l10n.storage,
       children: [
         ListTile(
-          leading: _emojiIcon('💾'),
+          leading: _settingsSvgIcon('assets/icon/diskette.svg'),
           title: Text(l10n.backupAndRestore),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => context.push(AppRoutes.backupRestore),
         ),
         ListTile(
-          leading: _emojiIcon('🗑️'),
+          leading: _settingsSvgIcon('assets/icon/trash-bin.svg'),
           title: Text(l10n.clearCache),
           onTap: () => _clearAiCache(context, ref, l10n),
         ),
@@ -566,7 +572,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       title: l10n.about,
       children: [
         ListTile(
-          leading: _emojiIcon('🔄'),
+          leading: _settingsSvgIcon('assets/icon/refresh.svg'),
           title: Text(l10n.checkForUpdate),
           trailing: isChecking
               ? const SizedBox(
@@ -578,27 +584,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           onTap: isChecking ? null : () => _checkForUpdate(context, ref, l10n),
         ),
         ListTile(
-          leading: _emojiIcon('📜'),
+          leading: _settingsSvgIcon('assets/icon/documents.svg'),
           title: Text(l10n.termsOfService),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => launchUrl(Uri.parse('https://www.echo-loop.top/terms')),
         ),
         ListTile(
-          leading: _emojiIcon('🔒'),
+          leading: _settingsSvgIcon('assets/icon/lock.svg'),
           title: Text(l10n.privacyPolicy),
           trailing: const Icon(Icons.chevron_right),
           onTap: () =>
               launchUrl(Uri.parse('https://www.echo-loop.top/privacy')),
         ),
         ListTile(
-          leading: _emojiIcon('✉️'),
+          leading: _settingsSvgIcon('assets/icon/feedback.svg'),
           title: Text(l10n.writeFeedback),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => launchUrl(Uri.parse('mailto:support@echo-loop.top')),
         ),
         if (defaultTargetPlatform == TargetPlatform.iOS)
           ListTile(
-            leading: _emojiIcon('⭐'),
+            leading: _settingsMaterialIcon(Icons.star_rounded),
             title: Text(l10n.rateUs),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => launchUrl(
@@ -607,7 +613,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
         ListTile(
-          leading: _emojiIcon('👥'),
+          leading: _settingsSvgIcon('assets/icon/group.svg'),
           title: Text(l10n.joinCommunity),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
@@ -618,9 +624,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         ListTile(
           leading: SizedBox(
-            width: 32,
-            height: 32,
-            child: Center(child: FaIcon(FontAwesomeIcons.github, size: 22)),
+            width: _settingsLeadingIconExtent,
+            height: _settingsLeadingIconExtent,
+            child: Center(
+              child: FaIcon(
+                FontAwesomeIcons.github,
+                size: _settingsBrandIconExtent,
+              ),
+            ),
           ),
           title: Text(l10n.viewSourceCode),
           subtitle: const Text(
@@ -1268,6 +1279,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  /// 构建设置列表 SVG 图标，统一约束尺寸，避免资源原始尺寸影响行高。
+  Widget _settingsSvgIcon(String assetName) {
+    return SizedBox(
+      width: _settingsLeadingIconExtent,
+      height: _settingsLeadingIconExtent,
+      child: Center(
+        child: SvgPicture.asset(
+          assetName,
+          width: _settingsSvgIconExtent,
+          height: _settingsSvgIconExtent,
+        ),
+      ),
+    );
+  }
+
+  /// 构建设置列表 Material 图标，用于暂未提供 SVG 的少量入口。
+  Widget _settingsMaterialIcon(IconData icon) {
+    return SizedBox(
+      width: _settingsLeadingIconExtent,
+      height: _settingsLeadingIconExtent,
+      child: Center(child: Icon(icon, size: _settingsMaterialIconExtent)),
+    );
+  }
+
   /// 在 children 之间插入浅灰分割线
   List<Widget> _intersperseDividers(List<Widget> children) {
     if (children.length <= 1) return children;
@@ -1302,7 +1337,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ) {
     final colorScheme = Theme.of(context).colorScheme;
     return ListTile(
-      leading: _emojiIcon('🎨'),
+      leading: _settingsSvgIcon('assets/icon/artist-palette.svg'),
       title: Text(l10n.themeMode),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1327,7 +1362,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ) {
     final colorScheme = Theme.of(context).colorScheme;
     return ListTile(
-      leading: _emojiIcon('🌐'),
+      leading: _settingsSvgIcon('assets/icon/locale.svg'),
       title: Text(l10n.language),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1355,7 +1390,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         supportedNativeLanguages[settings.nativeLanguage] ??
         settings.nativeLanguage;
     return ListTile(
-      leading: _emojiIcon('🗣️'),
+      leading: _settingsSvgIcon('assets/icon/speak.svg'),
       title: Text(l10n.nativeLanguage),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1476,7 +1511,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               settings,
               controller,
               ThemeMode.system,
-              '⚙️',
+              Icons.brightness_auto_rounded,
               l10n.themeModeSystem,
             ),
             _buildThemeOption(
@@ -1485,7 +1520,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               settings,
               controller,
               ThemeMode.light,
-              '☀️',
+              Icons.light_mode_rounded,
               l10n.themeModeLight,
             ),
             _buildThemeOption(
@@ -1494,7 +1529,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               settings,
               controller,
               ThemeMode.dark,
-              '🌛',
+              Icons.dark_mode_rounded,
               l10n.themeModeDark,
             ),
           ],
@@ -1509,20 +1544,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     AppSettingsState settings,
     AppSettings controller,
     ThemeMode mode,
-    String emoji,
+    IconData themeIcon,
     String label,
   ) {
     final isSelected = settings.themeMode == mode;
+    final colorScheme = Theme.of(context).colorScheme;
     return ListTile(
       leading: Icon(
         isSelected ? Icons.check_circle : Icons.circle_outlined,
-        color: isSelected
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.outline,
+        color: isSelected ? colorScheme.primary : colorScheme.outline,
       ),
       title: Row(
         children: [
-          Text(emoji, style: const TextStyle(fontSize: 20)),
+          Icon(
+            themeIcon,
+            size: 22,
+            color: isSelected ? colorScheme.primary : colorScheme.onSurface,
+          ),
           const SizedBox(width: 12),
           Text(label),
         ],

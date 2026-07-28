@@ -47,6 +47,7 @@ class Collection {
   final String id;
   final String name;
   final DateTime createdDate;
+  final DateTime updatedAt;
   final bool isPinned;
 
   /// 合集来源；默认 [CollectionSource.local] 兼容老数据
@@ -85,6 +86,7 @@ class Collection {
     required this.id,
     required this.name,
     required this.createdDate,
+    DateTime? updatedAt,
     this.isPinned = false,
     this.source = CollectionSource.local,
     this.remoteId,
@@ -96,7 +98,7 @@ class Collection {
     this.podcastMetaJson,
     this.podcastLastRefreshedAt,
     this.podcastLastRefreshError,
-  });
+  }) : updatedAt = updatedAt ?? createdDate;
 
   /// 方便判断：是否为官方合集
   bool get isOfficial => source == CollectionSource.official;
@@ -112,6 +114,9 @@ class Collection {
     id: json['id'],
     name: json['name'],
     createdDate: DateTime.parse(json['createdDate']),
+    updatedAt: json['updatedAt'] != null
+        ? DateTime.parse(json['updatedAt'] as String)
+        : DateTime.parse(json['createdDate']),
     isPinned: json['isPinned'] ?? json['isStarred'] ?? false,
     source: CollectionSource.fromString(json['source'] as String?),
     remoteId: json['remoteId'] as String?,
@@ -138,6 +143,7 @@ class Collection {
     String? id,
     String? name,
     DateTime? createdDate,
+    DateTime? updatedAt,
     bool? isPinned,
     CollectionSource? source,
     String? remoteId,
@@ -155,6 +161,7 @@ class Collection {
       id: id ?? this.id,
       name: name ?? this.name,
       createdDate: createdDate ?? this.createdDate,
+      updatedAt: updatedAt ?? this.updatedAt,
       isPinned: isPinned ?? this.isPinned,
       source: source ?? this.source,
       remoteId: remoteId ?? this.remoteId,

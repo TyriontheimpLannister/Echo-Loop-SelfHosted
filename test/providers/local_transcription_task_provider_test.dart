@@ -345,7 +345,10 @@ void main() {
         localTranscriptionTaskManagerProvider.notifier,
       );
 
-      await notifier.startLocalTranscription(item, model: model);
+      await runZoned<Future<void>>(
+        () => notifier.startLocalTranscription(item, model: model),
+        zoneSpecification: ZoneSpecification(print: (_, _, _, _) {}),
+      );
 
       expect(notifier.getTaskState(item.id), isA<LocalTranscriptionFailed>());
       expect(engine.disposeCalls, 1);

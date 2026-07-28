@@ -110,6 +110,13 @@ class LearningProgresses extends Table {
   /// 是否暂停学习（true 表示该音频不参与复习调度，可由用户随时恢复）
   BoolColumn get isPaused => boolean().withDefault(const Constant(false))();
 
+  /// 手动解锁当前复习轮的时刻（null = 未手动解锁）
+  ///
+  /// 用户点击「立即解锁」时写入，使当前复习轮跳过时间锁提前可学。
+  /// 不篡改 [lastStageCompletedAt]，后续轮次仍按实际完成时间顺延。
+  /// 跨 stage 推进时必须清除。
+  DateTimeColumn get manualUnlockAt => dateTime().nullable()();
+
   /// 每个 [LearningStage] 的 plan 版本快照（dense map，JSON 存储）。
   ///
   /// 格式：JSON object，key = `LearningStage.key`，value = 整数版本号。例：

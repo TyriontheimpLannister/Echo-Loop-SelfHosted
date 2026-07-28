@@ -14,6 +14,11 @@ import 'package:mocktail/mocktail.dart';
 import 'package:echo_loop/database/app_database.dart' as db;
 import 'package:echo_loop/database/providers.dart';
 import 'package:echo_loop/features/audio_import/audio_finalization_service.dart';
+import 'package:echo_loop/features/audio_import/audio_transcode_service.dart';
+import 'package:echo_loop/features/remote_config/remote_config.dart';
+import 'package:echo_loop/features/remote_config/remote_config_providers.dart';
+import 'package:echo_loop/features/subscription/providers/subscription_controller.dart'
+    show entitlementQuotaDivergenceHandlerProvider;
 import 'package:echo_loop/features/audio_import/audio_import_models.dart';
 import 'package:echo_loop/models/audio_item.dart';
 import 'package:echo_loop/models/word_timestamp.dart';
@@ -54,6 +59,26 @@ class _FakeFinalizationService extends AudioFinalizationService {
     calls++;
     if (error != null) throw error!;
     return result!;
+  }
+}
+
+/// 上传前压缩桩：记录调用，并按预设结果写入指定临时文件。
+class _FakeUploadTranscodeService extends AudioTranscodeService {
+  _FakeUploadTranscodeService({required this.shouldSucceed});
+
+  final bool shouldSucceed;
+  int calls = 0;
+
+  @override
+  Future<bool> transcodeForTranscriptionUpload({
+    required File source,
+    required File output,
+  }) async {
+    calls++;
+    if (!shouldSucceed) return false;
+    await output.parent.create(recursive: true);
+    await output.writeAsBytes([1, 2, 3]);
+    return true;
   }
 }
 
@@ -102,7 +127,9 @@ ProviderContainer _createContainer({
   required db.AppDatabase database,
   MockSubtitleAutoAlignService? mockAutoAlignService,
   AudioFinalizationService? finalizationService,
+  AudioTranscodeService? uploadTranscodeService,
   List<AudioItem>? audioItems,
+  void Function(String context)? quotaDivergenceHandler,
 }) {
   final overrides = <Override>[
     transcriptionApiClientProvider.overrideWithValue(mockApi),
@@ -111,8 +138,22 @@ ProviderContainer _createContainer({
     audioLibraryProvider.overrideWith(TestAudioLibrary.new),
     // 避免测试触达 SharedPreferences（需要 Flutter binding）。
     appSettingsProvider.overrideWith(() => _FakeAppSettings()),
+    // 避免 402 路径实例化真实订阅栈（E7 收敛信号在测试中默认 no-op）。
+    entitlementQuotaDivergenceHandlerProvider.overrideWithValue(
+      quotaDivergenceHandler ?? (_) {},
+    ),
     analyticsOverride(),
+    remoteTranscriptionLimitsProvider.overrideWithValue(
+      const RemoteTranscriptionLimits(),
+    ),
   ];
+  if (uploadTranscodeService != null) {
+    overrides.add(
+      transcriptionUploadTranscodeServiceProvider.overrideWithValue(
+        uploadTranscodeService,
+      ),
+    );
+  }
   if (finalizationService != null) {
     overrides.add(
       transcriptionFinalizationServiceProvider.overrideWithValue(
@@ -478,6 +519,140 @@ void main() {
       container.dispose();
     });
 
+    test('大文件先压缩，并使用压缩产物的指纹和 MIME 提交转录', () async {
+      final uploadTranscode = _FakeUploadTranscodeService(shouldSucceed: true);
+      final audioItem = _testAudioItem(audioSha256: 'source-sha');
+      when(() => mockFileOps.computeSha256(any())).thenAnswer((
+        invocation,
+      ) async {
+        final path = invocation.positionalArguments.single as String;
+        return path.endsWith('.m4a') ? 'compressed-sha' : 'source-sha';
+      });
+      when(() => mockFileOps.getFileSize(any())).thenAnswer((invocation) async {
+        final path = invocation.positionalArguments.single as String;
+        return path.endsWith('.m4a') ? 1024 : 26 * 1024 * 1024;
+      });
+      stubCachedTranscript();
+
+      final container = _createContainer(
+        mockApi: mockApi,
+        mockFileOps: mockFileOps,
+        database: database,
+        uploadTranscodeService: uploadTranscode,
+        audioItems: [audioItem],
+      );
+      await _seedAudioRows(database, [audioItem]);
+
+      await container
+          .read(transcriptionTaskManagerProvider.notifier)
+          .startTranscription(audioItem, 'en', accessToken: 'token');
+
+      expect(uploadTranscode.calls, 1);
+      verify(
+        () => mockApi.getUploadUrl(
+          sha256: 'compressed-sha',
+          mimeType: 'audio/mp4',
+          fileSize: 1024,
+          accessToken: 'token',
+        ),
+      ).called(1);
+      verify(
+        () => mockApi.submitTranscription(
+          sha256: 'compressed-sha',
+          fileName: any(named: 'fileName'),
+          objectName: any(named: 'objectName'),
+          publicUrl: any(named: 'publicUrl'),
+          mimeType: 'audio/mp4',
+          fileSize: 1024,
+          language: 'en',
+          accessToken: 'token',
+          mergeSentences: any(named: 'mergeSentences'),
+        ),
+      ).called(1);
+      expect(
+        container.read(transcriptionTaskManagerProvider)['test-audio-1'],
+        isA<TranscriptionCompleted>(),
+      );
+      container.dispose();
+    });
+
+    test('压缩后仍超过 25MiB 时不请求上传或提交', () async {
+      final uploadTranscode = _FakeUploadTranscodeService(shouldSucceed: true);
+      final audioItem = _testAudioItem(audioSha256: 'source-sha');
+      when(
+        () => mockFileOps.computeSha256(any()),
+      ).thenAnswer((_) async => 'sha');
+      when(
+        () => mockFileOps.getFileSize(any()),
+      ).thenAnswer((_) async => 26 * 1024 * 1024);
+
+      final container = _createContainer(
+        mockApi: mockApi,
+        mockFileOps: mockFileOps,
+        database: database,
+        uploadTranscodeService: uploadTranscode,
+      );
+      await container
+          .read(transcriptionTaskManagerProvider.notifier)
+          .startTranscription(audioItem, 'en', accessToken: 'token');
+
+      expect(uploadTranscode.calls, 1);
+      expect(
+        container.read(transcriptionTaskManagerProvider)['test-audio-1'],
+        isA<TranscriptionFailed>().having(
+          (state) => state.message,
+          'message',
+          'fileTooLarge',
+        ),
+      );
+      verifyNever(
+        () => mockApi.getUploadUrl(
+          sha256: any(named: 'sha256'),
+          mimeType: any(named: 'mimeType'),
+          fileSize: any(named: 'fileSize'),
+          accessToken: any(named: 'accessToken'),
+        ),
+      );
+      container.dispose();
+    });
+
+    test('压缩失败时不请求上传或提交', () async {
+      final uploadTranscode = _FakeUploadTranscodeService(shouldSucceed: false);
+      final audioItem = _testAudioItem(audioSha256: 'source-sha');
+      when(
+        () => mockFileOps.getFileSize(any()),
+      ).thenAnswer((_) async => 26 * 1024 * 1024);
+
+      final container = _createContainer(
+        mockApi: mockApi,
+        mockFileOps: mockFileOps,
+        database: database,
+        uploadTranscodeService: uploadTranscode,
+      );
+      await container
+          .read(transcriptionTaskManagerProvider.notifier)
+          .startTranscription(audioItem, 'en', accessToken: 'token');
+
+      expect(uploadTranscode.calls, 1);
+      expect(
+        container.read(transcriptionTaskManagerProvider)['test-audio-1'],
+        isA<TranscriptionFailed>().having(
+          (state) => state.message,
+          'message',
+          'compression',
+        ),
+      );
+      verifyNever(
+        () => mockApi.getUploadUrl(
+          sha256: any(named: 'sha256'),
+          mimeType: any(named: 'mimeType'),
+          fileSize: any(named: 'fileSize'),
+          accessToken: any(named: 'accessToken'),
+        ),
+      );
+      container.dispose();
+    });
+
     test('后端 402（本月额度用尽）→ 进入 TranscriptionQuotaExceeded 状态', () async {
       final audioItem = _testAudioItem(audioSha256: 'abc123');
 
@@ -525,11 +700,13 @@ void main() {
         ),
       );
 
+      final quotaSignals = <String>[];
       final container = _createContainer(
         mockApi: mockApi,
         mockFileOps: mockFileOps,
         database: database,
         audioItems: [audioItem],
+        quotaDivergenceHandler: quotaSignals.add,
       );
       await _seedAudioRows(database, [audioItem]);
       final notifier = container.read(
@@ -542,6 +719,8 @@ void main() {
         notifier.getTaskState('test-audio-1'),
         isA<TranscriptionQuotaExceeded>(),
       );
+      // E7：402 触发权益分歧收敛信号。
+      expect(quotaSignals, ['transcription']);
       container.dispose();
     });
 

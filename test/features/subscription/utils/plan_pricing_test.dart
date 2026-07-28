@@ -50,7 +50,7 @@ void main() {
       expect(v.perMonth, '3.33 €');
     });
 
-    test(r'年付有首期促销时，按首年实际支付价计算折扣', () {
+    test(r'年付有 intro offer 时，按首年实际支付价计算折扣', () {
       const yearly = SubscriptionPlan(
         planId: 'yearly',
         title: 'Yearly',
@@ -104,7 +104,7 @@ void main() {
   });
 
   group('computeIntroOfferDiscountPercent', () {
-    test('付费首期优惠按续费价计算折扣百分比', () {
+    test('付费 intro offer 按续费价计算折扣百分比', () {
       const plan = SubscriptionPlan(
         planId: 'yearly',
         title: 'Yearly',
@@ -164,7 +164,7 @@ void main() {
       expect(isIntroOfferDiscounted(plan), isNull);
     });
 
-    test('首期价不低于续费价时返回空', () {
+    test('intro offer 价格不低于续费价时返回空', () {
       const plan = SubscriptionPlan(
         planId: 'yearly',
         title: 'Yearly',
@@ -202,6 +202,22 @@ void main() {
 
       expect(computeIntroOfferDiscountPercent(plan), isNull);
       expect(isIntroOfferDiscounted(plan), isNull);
+    });
+  });
+
+  group('discountedPriceString', () {
+    test(r'US$50.00 + 50% → US$25.00', () {
+      expect(discountedPriceString(r'US$50.00', 50), r'US$25.00');
+    });
+
+    test(r'£47.99 + 50% → £24.00', () {
+      expect(discountedPriceString(r'£47.99', 50), r'£24.00');
+    });
+
+    test('无效价格或折扣 fail closed', () {
+      expect(discountedPriceString('Special', 50), isNull);
+      expect(discountedPriceString(r'$50.00', 0), isNull);
+      expect(discountedPriceString(r'$50.00', 120), isNull);
     });
   });
 }

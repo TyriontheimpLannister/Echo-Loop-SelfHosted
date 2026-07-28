@@ -71,7 +71,8 @@ class _FakePurchaseService implements PurchaseService {
   Future<Entitlement> purchase(String planId) async => Entitlement.free;
 
   @override
-  Future<Entitlement> restore() async => Entitlement.free;
+  Future<RestorePurchaseResult> restore() async =>
+      const RestorePurchaseResult(entitlement: Entitlement.free);
 }
 
 void main() {

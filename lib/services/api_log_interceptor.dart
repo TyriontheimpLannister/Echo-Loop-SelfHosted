@@ -39,7 +39,7 @@ class ApiLogInterceptor extends Interceptor {
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     options.extra[_startTimeKey] = DateTime.now().millisecondsSinceEpoch;
     final buffer = StringBuffer()
-      ..writeln('→ ${options.method} ${options.uri}');
+      ..writeln('→ ${options.method} ${_sanitizeUri(options.uri)}');
     if (options.data != null) {
       buffer.writeln('  请求体: ${_stringifyBody(options.data)}');
     }
@@ -52,7 +52,7 @@ class ApiLogInterceptor extends Interceptor {
     final request = response.requestOptions;
     final buffer = StringBuffer()
       ..writeln(
-        '← ${request.method} ${request.uri} '
+        '← ${request.method} ${_sanitizeUri(request.uri)} '
         '${response.statusCode}${_elapsedSuffix(request)}'
         '${_httpVersionSuffix(response.extra)}',
       );
@@ -78,7 +78,7 @@ class ApiLogInterceptor extends Interceptor {
     final response = err.response;
     final buffer = StringBuffer()
       ..writeln('❌ 请求失败${_elapsedSuffix(request)}')
-      ..writeln('  ${request.method} ${request.uri}')
+      ..writeln('  ${request.method} ${_sanitizeUri(request.uri)}')
       ..writeln('  错误类型: ${err.type}')
       ..writeln('  错误消息: ${err.message ?? err.error}');
 
@@ -136,6 +136,22 @@ class ApiLogInterceptor extends Interceptor {
     return text;
   }
 
+  /// 遮蔽 URI query 中的敏感字段，避免完整授权 URL、token 或 dlink 进入日志。
+  String _sanitizeUri(Uri uri) {
+    if (!uri.hasQuery) return uri.toString();
+    final redactedQuery = uri.queryParametersAll.entries
+        .map((entry) {
+          final key = entry.key;
+          if (_isSensitiveKey(key)) {
+            return '$key=***';
+          }
+          return entry.value.map((value) => '$key=$value').join('&');
+        })
+        .where((part) => part.isNotEmpty)
+        .join('&');
+    return uri.replace(query: redactedQuery).toString();
+  }
+
   /// 递归遮蔽凭据、用户标识和预签名上传地址，日志只保留字段存在性。
   Object? _sanitize(Object? value) {
     if (value is Map) {
@@ -154,6 +170,13 @@ class ApiLogInterceptor extends Interceptor {
     final normalized = key.toLowerCase().replaceAll(RegExp(r'[_-]'), '');
     return normalized.contains('authorization') ||
         normalized.contains('accesstoken') ||
+        normalized.contains('refreshtoken') ||
+        normalized.contains('polltoken') ||
+        normalized.contains('sessionid') ||
+        normalized.contains('clientsecret') ||
+        normalized == 'code' ||
+        normalized == 'state' ||
+        normalized == 'dlink' ||
         normalized == 'token' ||
         normalized.contains('userid') ||
         normalized.contains('appuserid') ||

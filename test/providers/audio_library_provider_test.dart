@@ -238,7 +238,7 @@ void main() {
           podcastEpisodeGuid: 'guid-1',
           audioSha256: 'sha-x',
           originalAudioSha256: 'orig-x',
-          contentStatus: AudioContentStatus.suspectEmpty,
+          contentStatus: AudioContentStatus.damaged,
         ),
       ]);
 

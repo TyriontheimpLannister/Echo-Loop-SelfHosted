@@ -16,6 +16,7 @@ import '../analytics/models/event_names.dart';
 import '../features/usage/usage_event.dart';
 import '../features/usage/usage_providers.dart';
 import '../database/providers.dart';
+import '../features/chatbot/widgets/sentence_chat_button.dart';
 import '../l10n/app_localizations.dart';
 import '../models/audio_item.dart' as model;
 import '../models/sentence.dart';
@@ -23,6 +24,7 @@ import '../providers/audio_engine/audio_engine_provider.dart';
 import '../providers/listening_practice/bookmark_manager.dart';
 import '../providers/notification_permission_provider.dart';
 import '../providers/sentence_ai_provider.dart';
+import '../services/app_logger.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common/bookmark_toggle_row.dart';
 import '../widgets/common/tappable_wrapper.dart';
@@ -83,12 +85,22 @@ class _SentenceDetailScreenState extends ConsumerState<SentenceDetailScreen> {
   @override
   void initState() {
     super.initState();
+    AppLogger.log(
+      'Navigation',
+      'sentence-detail init audio=${widget.args.audioItemId} '
+          'sentence=${widget.args.sentenceIndex}',
+    );
     _engine = ref.read(audioEngineProvider.notifier);
     _loadBookmarkStatus();
   }
 
   @override
   void dispose() {
+    AppLogger.log(
+      'Navigation',
+      'sentence-detail dispose audio=${widget.args.audioItemId} '
+          'sentence=${widget.args.sentenceIndex}',
+    );
     // 延迟到帧结束后再暂停音频：返回上一页时，监听 audioEngineProvider 的
     // 页面（如全能播放器的进度条）正在重建，若在 dispose 同步阶段改 provider
     // 会触发 "Tried to modify a provider while the widget tree was building"。
@@ -255,7 +267,11 @@ class _SentenceDetailScreenState extends ConsumerState<SentenceDetailScreen> {
         '${_formatTime(args.startTimeMs)} - ${_formatTime(args.endTimeMs)}';
 
     return Scaffold(
-      appBar: AppBar(title: Text(args.audioName), centerTitle: true),
+      appBar: AppBar(
+        title: Text(args.audioName),
+        centerTitle: true,
+        actions: [SentenceChatButton(sentenceText: args.sentenceText)],
+      ),
       // 词典面板宿主：面板内嵌 body、非 modal（显示期间正文可继续点词）。
       // 页面自身无 PopScope，由宿主代管返回键（面板开着时先关面板）。
       body: DictionaryPanelHost(

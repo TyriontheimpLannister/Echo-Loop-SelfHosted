@@ -13,53 +13,6 @@ void main() {
       );
     }
 
-    group('autoAddBracketBookmarks', () {
-      test('[text] 格式被识别', () {
-        final sentences = [
-          createSentence(0, '[Introduction]'),
-          createSentence(1, 'Normal text'),
-          createSentence(2, '[Chapter 1]'),
-        ];
-        final bookmarks = BookmarkManager.autoAddBracketBookmarks(sentences);
-
-        expect(bookmarks, {0, 2});
-      });
-
-      test('普通文本不被识别', () {
-        final sentences = [
-          createSentence(0, 'Hello world'),
-          createSentence(1, 'Normal sentence'),
-        ];
-        final bookmarks = BookmarkManager.autoAddBracketBookmarks(sentences);
-
-        expect(bookmarks, isEmpty);
-      });
-
-      test('混合列表正确过滤', () {
-        final sentences = [
-          createSentence(0, '[Title]'),
-          createSentence(1, 'Body text'),
-          createSentence(2, 'More text [with brackets] inside'),
-          createSentence(3, '[End]'),
-        ];
-        final bookmarks = BookmarkManager.autoAddBracketBookmarks(sentences);
-
-        // 只有完全被 [] 包裹的才算
-        expect(bookmarks, {0, 3});
-      });
-
-      test('空列表返回空集合', () {
-        final bookmarks = BookmarkManager.autoAddBracketBookmarks([]);
-        expect(bookmarks, isEmpty);
-      });
-
-      test('前后有空格的 [text] 也被识别（trim）', () {
-        final sentences = [createSentence(0, '  [Title]  ')];
-        final bookmarks = BookmarkManager.autoAddBracketBookmarks(sentences);
-        expect(bookmarks, {0});
-      });
-    });
-
     group('updateSentenceBookmarkStatus', () {
       test('正确设置 isBookmarked 标志', () {
         final sentences = [

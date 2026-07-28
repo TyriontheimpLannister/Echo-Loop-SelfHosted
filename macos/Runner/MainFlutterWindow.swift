@@ -7,6 +7,7 @@ class MainFlutterWindow: NSWindow {
   private var audioDecodeHandler: MacAudioDecodeHandler?
   private var notificationPermissionHandler: NotificationPermissionHandler?
   private var ttsSynthHandler: MacosTtsSynthHandler?
+  private var deviceInfoHandler: MacDeviceInfoHandler?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -20,6 +21,7 @@ class MainFlutterWindow: NSWindow {
     audioDecodeHandler = MacAudioDecodeHandler(binaryMessenger: flutterViewController.engine.binaryMessenger)
     notificationPermissionHandler = NotificationPermissionHandler(binaryMessenger: flutterViewController.engine.binaryMessenger)
     ttsSynthHandler = MacosTtsSynthHandler(binaryMessenger: flutterViewController.engine.binaryMessenger)
+    deviceInfoHandler = MacDeviceInfoHandler(binaryMessenger: flutterViewController.engine.binaryMessenger)
 
     // 设置最小窗口尺寸，避免内容过窄导致布局混乱
     self.minSize = NSSize(width: 400, height: 600)

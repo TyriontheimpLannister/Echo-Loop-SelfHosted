@@ -315,7 +315,9 @@ class _ParagraphSentenceListCardState extends State<ParagraphSentenceListCard>
     super.build(context); // AutomaticKeepAliveClientMixin 要求调用
     final theme = Theme.of(context);
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.m),
+      // 列表贴边铺满：去左右边距与圆角，读作整块内容区而非浮起卡片。
+      margin: EdgeInsets.zero,
+      shape: const RoundedRectangleBorder(),
       // 初次定位完成前列表不可见，居中后淡入——用户看不到从顶部到中部的滚动。
       child: AnimatedOpacity(
         key: kParagraphListInitialFocusKey,
