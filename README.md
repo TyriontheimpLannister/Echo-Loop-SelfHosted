@@ -18,7 +18,7 @@ Echo Loop 是一款英语听说训练 App（盲听 · 精听 · 跟读 · 复述
 <summary><strong>🚀 快速开始</strong></summary>
 
 ```bash
-git clone git@github.com:TyriontheimpLannister/Echo-Loop.git
+git clone git@github.com:TyriontheimpLannister/Echo-Loop-SelfHosted.git
 cd Echo-Loop
 cp .dev.env.template .dev.env   # 填入 API 地址等编译期变量
 flutter pub get
