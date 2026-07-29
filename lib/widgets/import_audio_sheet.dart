@@ -62,6 +62,7 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
   _ImportStep _step = _ImportStep.chooseSource;
   AudioImportOutcome _outcome = (added: const [], duplicates: const []);
   bool _baiduConfirming = false;
+  bool _homeSchoolingReceiving = false;
 
   @override
   void dispose() {
@@ -81,7 +82,8 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
     final cloudDriveImportEnabled = ref.watch(
       remoteFeatureEnabledProvider(RemoteFeature.cloudDriveImport),
     );
-    final busy = _isBusy(state) || baiduState.isBusy;
+    final busy =
+        _isBusy(state) || baiduState.isBusy || _homeSchoolingReceiving;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return PopScope(
@@ -242,6 +244,7 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
         ),
         _ImportStep.onlineReceive => _HomeSchoolingOnlinePanel(
           key: const ValueKey('homeschooling-online'),
+          busy: _homeSchoolingReceiving,
           onBack: () => setState(() => _step = _ImportStep.chooseSource),
           onReceive: _receiveHomeSchoolingPackageOnline,
         ),
@@ -475,38 +478,44 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
     required String contentMode,
   }) async {
     if (!mounted) return;
-    setState(() {});
     final controller = ref.read(homeschoolingImportControllerProvider.notifier);
-    await controller.receiveFromHomeSchooling(
-      password: password,
-      contentMode: contentMode,
-    );
-    final state = ref.read(homeschoolingImportControllerProvider);
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
-    if (state is HomeschoolingImportSuccess) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            '已接收 ${state.addedCount} 项；重复 ${state.duplicateCount} 项；失败 ${state.failedCount} 项。',
+    setState(() => _homeSchoolingReceiving = true);
+    try {
+      await controller.receiveFromHomeSchooling(
+        password: password,
+        contentMode: contentMode,
+      );
+      final state = ref.read(homeschoolingImportControllerProvider);
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      if (state is HomeschoolingImportSuccess) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '已接收 ${state.addedCount} 项；重复 ${state.duplicateCount} 项；失败 ${state.failedCount} 项。',
+            ),
           ),
-        ),
-      );
-      setState(() => _step = _ImportStep.completed);
-      _outcome = (
-        added: const [],
-        duplicates: const [],
-      );
-    } else if (state is HomeschoolingImportFailure) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('在线接收 HomeSchooling 包失败：${state.message}'),
-        ),
-      );
-      setState(() => _step = _ImportStep.chooseSource);
+        );
+        setState(() => _step = _ImportStep.completed);
+        _outcome = (
+          added: const [],
+          duplicates: const [],
+        );
+      } else if (state is HomeschoolingImportFailure) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('在线接收 HomeSchooling 包失败：${state.message}'),
+          ),
+        );
+        setState(() => _step = _ImportStep.chooseSource);
+      }
+    } finally {
+      controller.reset();
+      if (mounted) {
+        setState(() => _homeSchoolingReceiving = false);
+      }
     }
-    controller.reset();
   }
 
   Future<void> _cancelActiveImport() async {
@@ -676,10 +685,12 @@ class _HeaderTextButton extends StatelessWidget {
 class _HomeSchoolingOnlinePanel extends StatelessWidget {
   const _HomeSchoolingOnlinePanel({
     super.key,
+    required this.busy,
     required this.onBack,
     required this.onReceive,
   });
 
+  final bool busy;
   final VoidCallback onBack;
   final Future<void> Function() onReceive;
 
@@ -700,12 +711,29 @@ class _HomeSchoolingOnlinePanel extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        if (busy) ...[
+          const LinearProgressIndicator(),
+          const SizedBox(height: 10),
+          Text(
+            '正在接收，请稍候…',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: onReceive,
-            icon: const Icon(Icons.wifi_rounded),
-            label: const Text('立即接收'),
+            onPressed: busy ? null : onReceive,
+            icon: busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.wifi_rounded),
+            label: Text(busy ? '接收中…' : '立即接收'),
           ),
         ),
         const SizedBox(height: 12),
