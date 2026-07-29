@@ -16,6 +16,7 @@ import '../../models/audio_item.dart';
 import '../../models/sentence.dart';
 import 'homeschooling_package_exporter.dart';
 import 'homeschooling_package_importer.dart';
+import 'homeschooling_package_receiver_service.dart';
 import 'homeschooling_package.dart';
 
 /// 导入进度状态。
@@ -79,6 +80,37 @@ class HomeschoolingImportController
       state = HomeschoolingImportFailure(error.toString());
     }
   }
+
+  Future<void> receiveFromHomeSchooling({
+    required String password,
+    required String contentMode,
+  }) async {
+    state = const HomeschoolingImportRunning();
+    try {
+      final receiver = HomeSchoolingPackageReceiverService();
+      final received = await receiver.receiveFromEchoLoopBackend();
+      final result = await HomeschoolingPackageImporter().importPackage(
+        received.package,
+        dao: ref.read(audioItemDaoProvider),
+        childSlug: '',
+        audioLibrary: ref.read(audioLibraryProvider.notifier),
+        audioLibraryState: ref.read(audioLibraryProvider),
+        collectionList: ref.read(collectionListProvider.notifier),
+        collectionState: ref.read(collectionListProvider),
+      );
+      state = HomeschoolingImportSuccess(
+        result.added.length,
+        result.duplicates.length,
+        result.failed,
+        received.package.title,
+      );
+    } catch (error) {
+      state = HomeschoolingImportFailure(error.toString());
+    }
+  }
+
+
+
 
   void reset() {
     state = const HomeschoolingImportIdle();

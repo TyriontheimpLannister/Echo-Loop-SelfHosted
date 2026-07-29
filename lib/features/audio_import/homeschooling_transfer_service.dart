@@ -7,6 +7,11 @@ const homeSchoolingBaseUrl = String.fromEnvironment(
   defaultValue: 'http://192.168.123.187:18002',
 );
 
+const echoLoopApiBaseUrl = String.fromEnvironment(
+  'ECHOLOOP_API_BASE',
+  defaultValue: 'http://192.168.123.187:8000',
+);
+
 /// HomeSchooling 中可接收听写任务的孩子。
 class HomeSchoolingChild {
   const HomeSchoolingChild({required this.slug, required this.name});
@@ -114,7 +119,7 @@ class HomeSchoolingTransferService {
     if (data is! Map) {
       throw const HomeSchoolingTransferException('HomeSchooling 没有返回导入结果。');
     }
-    final taskName = data['name'];
+    final taskName = data['title'] ?? data['name'];
     final itemCount = data['items_count'];
     return HomeSchoolingTransferResult(
       taskName: taskName is String && taskName.trim().isNotEmpty

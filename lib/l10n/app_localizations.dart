@@ -7790,6 +7790,12 @@ abstract class AppLocalizations {
   /// **'Audio import canceled'**
   String get audioImportCanceled;
 
+  /// No description provided for @importAudioFromHomeSchooling.
+  ///
+  /// In zh, this message translates to:
+  /// **'在线接收 HomeSchooling 包'**
+  String get importAudioFromHomeSchooling;
+
   /// No description provided for @cancelDownload.
   ///
   /// In en, this message translates to:

@@ -42,6 +42,7 @@ enum _ImportStep {
   directUrl,
   cloudDrive,
   baiduNetdisk,
+  onlineReceive,
   completed,
 }
 
@@ -184,6 +185,7 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
         _baiduConfirming
             ? l10n.importList
             : _directoryName(l10n, baiduState.currentPath),
+      _ImportStep.onlineReceive => l10n.importAudioFromHomeSchooling,
       _ImportStep.completed => l10n.audioImportComplete,
     };
   }
@@ -203,7 +205,10 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
           showCloudDrive: cloudDriveImportEnabled,
           onLocalFile: () => setState(() => _step = _ImportStep.localFile),
           onDirectUrl: () => setState(() => _step = _ImportStep.directUrl),
-          onHomeSchooling: () => _pickAndImportHomeSchoolingPackage(),
+          onHomeSchoolingFile: () => _pickAndImportHomeSchoolingPackage(),
+          onHomeSchoolingOnline: () {
+            setState(() => _step = _ImportStep.onlineReceive);
+          },
           onCloudDrive: () => setState(() => _step = _ImportStep.cloudDrive),
         ),
         _ImportStep.localFile => AddAudioDialog(
@@ -234,6 +239,11 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
           onShowConfirm: () => setState(() => _baiduConfirming = true),
           onHideConfirm: () => setState(() => _baiduConfirming = false),
           onBack: _goBackFromBaiduNetdisk,
+        ),
+        _ImportStep.onlineReceive => _HomeSchoolingOnlinePanel(
+          key: const ValueKey('homeschooling-online'),
+          onBack: () => setState(() => _step = _ImportStep.chooseSource),
+          onImported: _handleImported,
         ),
         _ImportStep.completed => _CompletedPanel(
           key: const ValueKey('completed'),
@@ -384,6 +394,106 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
     await ref.read(audioImportControllerProvider.notifier).cancel();
     if (!mounted) return;
     setState(() => _step = _ImportStep.directUrl);
+  }
+
+  Future<void> _receiveHomeSchoolingPackageOnline() async {
+    if (!mounted) return;
+    var contentMode = 'passage';
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              title: const Text('在线接收 HomeSchooling 包'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Radio<String>(
+                          value: 'passage',
+                          groupValue: contentMode,
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setModalState(() => contentMode = value);
+                          },
+                        ),
+                      ),
+                      const Expanded(child: Text('整篇短文')),
+                      Expanded(
+                        child: Radio<String>(
+                          value: 'sentences',
+                          groupValue: contentMode,
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setModalState(() => contentMode = value);
+                          },
+                        ),
+                      ),
+                      const Expanded(child: Text('独立句子')),
+                    ],
+                  )
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('接收'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (!mounted) return;
+    setState(() => _step = _ImportStep.onlineReceive);
+    await _receiveWithController(password: '', contentMode: contentMode);
+  }
+
+  Future<void> _receiveWithController({
+    required String password,
+    required String contentMode,
+  }) async {
+    if (!mounted) return;
+    setState(() {});
+    final controller = ref.read(homeschoolingImportControllerProvider.notifier);
+    await controller.receiveFromHomeSchooling(
+      password: password,
+      contentMode: contentMode,
+    );
+    final state = ref.read(homeschoolingImportControllerProvider);
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    if (state is HomeschoolingImportSuccess) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            '已接收 ${state.addedCount} 项；重复 ${state.duplicateCount} 项；失败 ${state.failedCount} 项。',
+          ),
+        ),
+      );
+      setState(() => _step = _ImportStep.completed);
+      _outcome = (
+        added: const [],
+        duplicates: const [],
+      );
+    } else if (state is HomeschoolingImportFailure) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('在线接收 HomeSchooling 包失败：${state.message}'),
+        ),
+      );
+      setState(() => _step = _ImportStep.chooseSource);
+    }
+    controller.reset();
   }
 
   Future<void> _cancelActiveImport() async {
@@ -550,20 +660,163 @@ class _HeaderTextButton extends StatelessWidget {
   }
 }
 
+class _HomeSchoolingOnlinePanel extends StatelessWidget {
+  const _HomeSchoolingOnlinePanel({
+    super.key,
+    required this.onBack,
+    required this.onImported,
+  });
+
+  final VoidCallback onBack;
+  final void Function(AudioImportOutcome outcome) onImported;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '在线接收 HomeSchooling 包',
+          style: theme.textTheme.titleMedium,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '在 Echo Loop 端直接接收家长端发送的听写包，无需拷贝文件。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: () {
+              final controller = TextEditingController();
+              var contentMode = 'passage';
+              showDialog<String>(
+                context: context,
+                builder: (dialogContext) {
+                  return StatefulBuilder(
+                    builder: (context, setModalState) {
+                      return AlertDialog(
+title: const Text('在线接收 HomeSchooling 包'),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Radio<String>(
+                                    value: 'passage',
+                                    groupValue: contentMode,
+                                    onChanged: (value) {
+                                      if (value == null) return;
+                                      setModalState(
+                                        () => contentMode = value,
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const Expanded(child: Text('整篇短文')),
+                                Expanded(
+                                  child: Radio<String>(
+                                    value: 'sentences',
+                                    groupValue: contentMode,
+                                    onChanged: (value) {
+                                      if (value == null) return;
+                                      setModalState(
+                                        () => contentMode = value,
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const Expanded(child: Text('独立句子')),
+                              ],
+                            )
+                          ],
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(),
+                            child: const Text('取消'),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              final value = controller.text.trim();
+                              if (value.isNotEmpty) {
+                                Navigator.of(dialogContext).pop(value);
+                              }
+                            },
+                            child: const Text('接收'),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ).then((_) {
+                final importController = ProviderScope.containerOf(context, listen: false)
+                    .read(homeschoolingImportControllerProvider.notifier);
+                importController.receiveFromHomeSchooling(
+                  password: '',
+                  contentMode: contentMode,
+                );
+                final state = ProviderScope.containerOf(context, listen: false)
+                    .read(homeschoolingImportControllerProvider);
+                final messenger = ScaffoldMessenger.maybeOf(context);
+                if (state is HomeschoolingImportSuccess) {
+                  onImported((
+                    added: const [],
+                    duplicates: const [],
+                  ));
+                } else if (state is HomeschoolingImportFailure) {
+                  messenger?.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '在线接收 HomeSchooling 包失败：${state.message}',
+                      ),
+                    ),
+                  );
+                }
+                importController.reset();
+              });
+            },
+            icon: const Icon(Icons.wifi_rounded),
+            label: const Text('立即接收'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextButton.icon(
+          onPressed: onBack,
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          label: const Text('返回'),
+        ),
+      ],
+    );
+  }
+}
+
 class _ChooseSourcePanel extends StatelessWidget {
   const _ChooseSourcePanel({
     super.key,
     required this.showCloudDrive,
     required this.onLocalFile,
     required this.onDirectUrl,
-    required this.onHomeSchooling,
+    required this.onHomeSchoolingFile,
+    required this.onHomeSchoolingOnline,
     required this.onCloudDrive,
   });
 
   final bool showCloudDrive;
   final VoidCallback onLocalFile;
   final VoidCallback onDirectUrl;
-  final VoidCallback onHomeSchooling;
+  final VoidCallback onHomeSchoolingFile;
+  final VoidCallback onHomeSchoolingOnline;
   final VoidCallback onCloudDrive;
 
   @override
@@ -598,11 +851,19 @@ class _ChooseSourcePanel extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _ImportOptionTile(
-          key: const ValueKey('import-option-homeschooling'),
+          key: const ValueKey('import-option-homeschooling-file'),
           icon: Icons.school_outlined,
           title: '从 HomeSchooling 包导入',
           description: '选择 HomeSchooling 家长代学习机上生成的 .json 包，一键转成听写语料。',
-          onTap: onHomeSchooling,
+          onTap: onHomeSchoolingFile,
+        ),
+        const SizedBox(height: 8),
+        _ImportOptionTile(
+          key: const ValueKey('import-option-homeschooling-online'),
+          icon: Icons.wifi,
+          title: '在线接收 HomeSchooling 包',
+          description: '在 Echo Loop 端直接接收家长端发送的听写包，无需拷贝文件。',
+          onTap: onHomeSchoolingOnline,
         ),
       ],
     );

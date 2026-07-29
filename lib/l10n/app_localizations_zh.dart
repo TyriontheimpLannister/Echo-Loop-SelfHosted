@@ -4250,6 +4250,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get audioImportCanceled => '已取消音频导入';
 
   @override
+  String get importAudioFromHomeSchooling => '在线接收 HomeSchooling 包';
+
+  @override
   String get cancelDownload => '取消下载';
 
   @override

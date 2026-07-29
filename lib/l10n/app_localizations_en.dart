@@ -4452,6 +4452,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get audioImportCanceled => 'Audio import canceled';
 
   @override
+  String get importAudioFromHomeSchooling => 'Receive from HomeSchooling';
+
+  @override
   String get cancelDownload => 'Cancel Download';
 
   @override
