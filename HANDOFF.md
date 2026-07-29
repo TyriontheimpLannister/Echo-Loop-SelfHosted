@@ -34,8 +34,9 @@ Do not modify:
 - secrets, device data, or production systems
 
 ## Next Steps
-1. Commit and push the current feature state after graphify refresh.
-2. If Ian wants it, improve receive feedback and add explicit task selection.
+1. If Ian wants it, improve receive feedback and add explicit task selection.
+2. Keep the unrelated pre-existing deletions and cache noise out of this feature
+   branch until explicitly reviewed.
 
 ## Verification
 - Passed: `flutter analyze lib/features/audio_import/homeschooling_package_receiver_service.dart lib/features/audio_import/homeschooling_package_controller.dart lib/widgets/import_audio_sheet.dart`
@@ -54,5 +55,6 @@ Do not modify:
 | Bridge tests | `test/features/audio_import/homeschooling_package_receiver_service_test.dart` |
 
 ## Recent History
+- 2026-07-29 23:03: Committed and pushed the pull-based receive + graphify refresh to `fork/main` (`a602700`).
 - 2026-07-29 22:56: Graphify refreshed in code-only mode because the repo has docs/images but no LLM backend configured; report and graph.json were updated.
 - 2026-07-29 22:56: HomeSchooling import switched to pull-based latest-done-task retrieval; HONOR PAD verified 1.0.36+79 install and receive flow.
