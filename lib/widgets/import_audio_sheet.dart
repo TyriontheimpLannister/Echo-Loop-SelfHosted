@@ -243,7 +243,7 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
         _ImportStep.onlineReceive => _HomeSchoolingOnlinePanel(
           key: const ValueKey('homeschooling-online'),
           onBack: () => setState(() => _step = _ImportStep.chooseSource),
-          onImported: _handleImported,
+          onReceive: _receiveHomeSchoolingPackageOnline,
         ),
         _ImportStep.completed => _CompletedPanel(
           key: const ValueKey('completed'),
@@ -398,8 +398,9 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
 
   Future<void> _receiveHomeSchoolingPackageOnline() async {
     if (!mounted) return;
+    final passwordController = TextEditingController();
     var contentMode = 'passage';
-    await showDialog<void>(
+    final password = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -409,6 +410,12 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: '家长密码'),
+                  ),
+                  const SizedBox(height: 16),
                   Row(
                     children: [
                       Expanded(
@@ -434,7 +441,7 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
                       ),
                       const Expanded(child: Text('独立句子')),
                     ],
-                  )
+                  ),
                 ],
               ),
               actions: [
@@ -443,7 +450,12 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
                   child: const Text('取消'),
                 ),
                 TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  onPressed: () {
+                    final password = passwordController.text.trim();
+                    if (password.isNotEmpty) {
+                      Navigator.of(dialogContext).pop(password);
+                    }
+                  },
                   child: const Text('接收'),
                 ),
               ],
@@ -452,9 +464,10 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
         );
       },
     );
-    if (!mounted) return;
+    passwordController.dispose();
+    if (password == null || !mounted) return;
     setState(() => _step = _ImportStep.onlineReceive);
-    await _receiveWithController(password: '', contentMode: contentMode);
+    await _receiveWithController(password: password, contentMode: contentMode);
   }
 
   Future<void> _receiveWithController({
@@ -664,11 +677,11 @@ class _HomeSchoolingOnlinePanel extends StatelessWidget {
   const _HomeSchoolingOnlinePanel({
     super.key,
     required this.onBack,
-    required this.onImported,
+    required this.onReceive,
   });
 
   final VoidCallback onBack;
-  final void Function(AudioImportOutcome outcome) onImported;
+  final Future<void> Function() onReceive;
 
   @override
   Widget build(BuildContext context) {
@@ -678,10 +691,7 @@ class _HomeSchoolingOnlinePanel extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '在线接收 HomeSchooling 包',
-          style: theme.textTheme.titleMedium,
-        ),
+        Text('在线接收 HomeSchooling 包', style: theme.textTheme.titleMedium),
         const SizedBox(height: 12),
         Text(
           '在 Echo Loop 端直接接收家长端发送的听写包，无需拷贝文件。',
@@ -693,99 +703,7 @@ class _HomeSchoolingOnlinePanel extends StatelessWidget {
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: () {
-              final controller = TextEditingController();
-              var contentMode = 'passage';
-              showDialog<String>(
-                context: context,
-                builder: (dialogContext) {
-                  return StatefulBuilder(
-                    builder: (context, setModalState) {
-                      return AlertDialog(
-title: const Text('在线接收 HomeSchooling 包'),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Radio<String>(
-                                    value: 'passage',
-                                    groupValue: contentMode,
-                                    onChanged: (value) {
-                                      if (value == null) return;
-                                      setModalState(
-                                        () => contentMode = value,
-                                      );
-                                    },
-                                  ),
-                                ),
-                                const Expanded(child: Text('整篇短文')),
-                                Expanded(
-                                  child: Radio<String>(
-                                    value: 'sentences',
-                                    groupValue: contentMode,
-                                    onChanged: (value) {
-                                      if (value == null) return;
-                                      setModalState(
-                                        () => contentMode = value,
-                                      );
-                                    },
-                                  ),
-                                ),
-                                const Expanded(child: Text('独立句子')),
-                              ],
-                            )
-                          ],
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () =>
-                                Navigator.of(dialogContext).pop(),
-                            child: const Text('取消'),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              final value = controller.text.trim();
-                              if (value.isNotEmpty) {
-                                Navigator.of(dialogContext).pop(value);
-                              }
-                            },
-                            child: const Text('接收'),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ).then((_) {
-                final importController = ProviderScope.containerOf(context, listen: false)
-                    .read(homeschoolingImportControllerProvider.notifier);
-                importController.receiveFromHomeSchooling(
-                  password: '',
-                  contentMode: contentMode,
-                );
-                final state = ProviderScope.containerOf(context, listen: false)
-                    .read(homeschoolingImportControllerProvider);
-                final messenger = ScaffoldMessenger.maybeOf(context);
-                if (state is HomeschoolingImportSuccess) {
-                  onImported((
-                    added: const [],
-                    duplicates: const [],
-                  ));
-                } else if (state is HomeschoolingImportFailure) {
-                  messenger?.showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        '在线接收 HomeSchooling 包失败：${state.message}',
-                      ),
-                    ),
-                  );
-                }
-                importController.reset();
-              });
-            },
+            onPressed: onReceive,
             icon: const Icon(Icons.wifi_rounded),
             label: const Text('立即接收'),
           ),

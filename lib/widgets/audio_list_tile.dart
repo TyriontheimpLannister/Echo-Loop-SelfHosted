@@ -1,4 +1,4 @@
-// 音频列表项组件
+﻿// 音频列表项组件
 //
 // 统一的音频列表项，同时用于资源库全局列表和合集详情页。
 // 通过 collectionId 参数区分两种上下文，自动调整菜单、路由和显示逻辑。
@@ -1218,6 +1218,7 @@ class AudioListTile extends ConsumerWidget {
       AudioImportFailureCode.invalidUrl => l10n.audioUrlUnsupported,
       AudioImportFailureCode.unsupportedScheme => l10n.audioUrlUnsupported,
       AudioImportFailureCode.unsupportedFormat => l10n.audioUrlUnsupported,
+      AudioImportFailureCode.invalidPayload => l10n.audioUrlInvalid,
       AudioImportFailureCode.notAudio => l10n.audioUrlUnsupported,
       AudioImportFailureCode.network => l10n.downloadErrorNetwork,
       AudioImportFailureCode.storage => l10n.downloadErrorStorage,

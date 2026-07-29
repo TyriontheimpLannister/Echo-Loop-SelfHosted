@@ -4452,9 +4452,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get audioImportCanceled => 'Audio import canceled';
 
   @override
-  String get importAudioFromHomeSchooling => 'Receive from HomeSchooling';
-
-  @override
   String get cancelDownload => 'Cancel Download';
 
   @override
@@ -4877,4 +4874,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatQuoteRemove => 'Remove quote';
+
+  @override
+  String get importAudioFromHomeSchooling => 'Receive from HomeSchooling';
 }

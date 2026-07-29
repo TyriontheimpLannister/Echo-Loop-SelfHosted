@@ -817,14 +817,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.0"
-  fsrs:
-    dependency: "direct main"
-    description:
-      name: fsrs
-      sha256: b50dbee450a424dbac4fb0f49cae25ff2e4e6d01844caa1ec0c26de5baba8071
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.1"
   fuchsia_remote_debug_protocol:
     dependency: transitive
     description: flutter
@@ -1268,7 +1260,7 @@ packages:
     source: hosted
     version: "2.2.1"
   path_provider_platform_interface:
-    dependency: "direct dev"
+    dependency: transitive
     description:
       name: path_provider_platform_interface
       sha256: "88f5779f72ba699763fa3a3b06aa4bf6de76c8e5de842cf6f29e2e06476c2334"
@@ -2068,10 +2060,10 @@ packages:
     dependency: transitive
     description:
       name: vector_graphics_compiler
-      sha256: "142a9146f447d15b10bdc00e21d5f4d83e5b32bb5f8f8f5a04c75311344923a3"
+      sha256: "4dca4feb77dc3ec7f6e27e49c53241eb8217f55e4f9b12599a27f8903bca5682"
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.6"
+    version: "1.3.0"
   vector_math:
     dependency: transitive
     description:
@@ -2185,5 +2177,5 @@ packages:
     source: hosted
     version: "2.1.0"
 sdks:
-  dart: ">=3.10.0 <4.0.0"
-  flutter: ">=3.38.1"
+  dart: ">=3.11.0 <4.0.0"
+  flutter: ">=3.41.0"

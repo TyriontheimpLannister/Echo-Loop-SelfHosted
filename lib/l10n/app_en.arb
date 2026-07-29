@@ -1,4 +1,4 @@
-{
+﻿{
   "@@locale": "en",
   "appTitle": "Echo Loop",
   "premiumTitle": "Echo Loop Premium",
@@ -2436,5 +2436,6 @@
   "chatFollowUpTranslate": "Translate",
   "chatFollowUpExample": "Example",
   "chatFollowUpInstruction": "Answer the question based strictly on the quoted text below.",
-  "chatQuoteRemove": "Remove quote"
+  "chatQuoteRemove": "Remove quote",
+  "importAudioFromHomeSchooling": "Receive from HomeSchooling"
 }

@@ -1,4 +1,4 @@
-{
+﻿{
   "@@locale": "zh",
   "appTitle": "Echo Loop",
   "premiumTitle": "Echo Loop 会员",
@@ -1939,5 +1939,6 @@
   "chatFollowUpTranslate": "翻译",
   "chatFollowUpExample": "举个例子",
   "chatFollowUpInstruction": "请仅根据下方引用的内容回答问题。",
-  "chatQuoteRemove": "移除引用"
+  "chatQuoteRemove": "移除引用",
+  "importAudioFromHomeSchooling": "在线接收 HomeSchooling 包"
 }

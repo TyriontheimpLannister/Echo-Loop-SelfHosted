@@ -88,7 +88,10 @@ class HomeschoolingImportController
     state = const HomeschoolingImportRunning();
     try {
       final receiver = HomeSchoolingPackageReceiverService();
-      final received = await receiver.receiveFromEchoLoopBackend();
+      final received = await receiver.receiveLatestPackage(
+        password: password,
+        contentMode: contentMode,
+      );
       final result = await HomeschoolingPackageImporter().importPackage(
         received.package,
         dao: ref.read(audioItemDaoProvider),
@@ -108,9 +111,6 @@ class HomeschoolingImportController
       state = HomeschoolingImportFailure(error.toString());
     }
   }
-
-
-
 
   void reset() {
     state = const HomeschoolingImportIdle();
