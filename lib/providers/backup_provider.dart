@@ -9,10 +9,12 @@ import '../database/providers.dart';
 import '../services/backup/backup_manifest.dart';
 import '../services/backup/backup_progress.dart';
 import '../services/backup/backup_service.dart';
+import '../services/profile_service.dart';
 import 'audio_library_provider.dart';
 import 'collection_provider.dart';
 import 'learning_progress_provider.dart';
 import 'package_info_provider.dart';
+import 'profile_provider.dart';
 import 'tag_provider.dart';
 
 /// BackupService Provider
@@ -65,7 +67,10 @@ Future<BackupManifest> performImport(
     );
 
     // Step 3: 重新打开数据库并热切换
-    final newDb = AppDatabase(openConnectionWithName('echo_loop.db'));
+    final profile = ref.read(activeProfileProvider);
+    final newDb = AppDatabase(
+      openConnectionWithName(profileDatabaseFileName(profile)),
+    );
     switchAppDatabase(newDb, ref);
 
     // Step 4: 重新加载数据
@@ -77,7 +82,10 @@ Future<BackupManifest> performImport(
     return manifest;
   } catch (e) {
     // 恢复数据库连接
-    final fallbackDb = AppDatabase(openConnectionWithName('echo_loop.db'));
+    final profile = ref.read(activeProfileProvider);
+    final fallbackDb = AppDatabase(
+      openConnectionWithName(profileDatabaseFileName(profile)),
+    );
     switchAppDatabase(fallbackDb, ref);
     await ref.read(audioLibraryProvider.notifier).loadLibrary();
     ref.read(collectionListProvider.notifier).loadCollections();

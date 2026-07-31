@@ -13,14 +13,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:universal_io/io.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/providers.dart';
 import '../l10n/app_localizations.dart';
 import '../models/audio_item.dart';
 import '../providers/audio_library_provider.dart';
+import '../providers/profile_provider.dart';
 import '../services/audio_export_service.dart';
 import '../features/audio_import/homeschooling_package_controller.dart';
 import '../features/audio_import/homeschooling_transfer_service.dart';
+import '../services/profile_service.dart';
 import '../widgets/dialogs/export_audio_dialog.dart';
 import '../widgets/manage_subtitles_sheet.dart';
 import 'app_data_dir.dart';
@@ -220,10 +223,27 @@ Future<void> exportHomeSchoolingPackage(
     final transfer = HomeSchoolingTransferService();
     final children = await transfer.loadChildren(password);
     if (!context.mounted) return;
-    final child = children.length == 1
-        ? children.first
-        : await _chooseHomeSchoolingChild(context, children);
+    final profile = ref.read(activeProfileProvider);
+    final prefs = await SharedPreferences.getInstance();
+    final savedSlug = readHomeSchoolingChildSlug(prefs, profile);
+    HomeSchoolingChild? savedChild;
+    if (savedSlug != null) {
+      for (final candidate in children) {
+        if (candidate.slug == savedSlug) {
+          savedChild = candidate;
+          break;
+        }
+      }
+    }
+    if (!context.mounted) return;
+    final child =
+        savedChild ??
+        (children.length == 1
+            ? children.first
+            : await _chooseHomeSchoolingChild(context, children));
     if (child == null || !context.mounted) return;
+    await saveHomeSchoolingChildSlug(prefs, profile, child.slug);
+    if (!context.mounted) return;
 
     ScaffoldMessenger.of(
       context,

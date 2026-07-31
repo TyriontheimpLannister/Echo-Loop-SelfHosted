@@ -12,6 +12,7 @@ import '../../utils/app_data_dir.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../database/app_database.dart';
+import '../profile_service.dart';
 import 'backup_constants.dart';
 import 'backup_manifest.dart';
 import 'backup_progress.dart';
@@ -21,6 +22,7 @@ import 'backup_progress.dart';
 /// 这些 key 属于设备相关状态或开发者调试用途，不应跨设备迁移。
 const _spBlacklist = {
   'demo_mode',
+  activeProfileKey,
   'developer_time_machine_at_ms',
   'anonymous_id',
   'unlock_all_reviews',
@@ -51,6 +53,7 @@ class BackupService {
     void Function(BackupProgress)? onProgress,
   }) async {
     final docsDir = await getAppDataDirectory();
+    final databaseFileName = await _currentDatabaseFileName();
     final tempDir = await _createTempDir('echoloop_export');
 
     try {
@@ -59,7 +62,7 @@ class BackupService {
       await _database.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
 
       // Step 2: 复制数据库文件
-      final dbSrc = File(p.join(docsDir.path, _dbFileName));
+      final dbSrc = File(p.join(docsDir.path, databaseFileName));
       final dbDst = File(p.join(tempDir.path, _dbFileName));
       await dbSrc.copy(dbDst.path);
 
@@ -155,6 +158,7 @@ class BackupService {
     void Function(BackupProgress)? onProgress,
   }) async {
     final docsDir = await getAppDataDirectory();
+    final databaseFileName = await _currentDatabaseFileName();
     final tempDir = await _createTempDir('echoloop_import');
 
     try {
@@ -214,8 +218,8 @@ class BackupService {
 
       // Step 6: 替换数据库文件（.bak 原子性保护）
       onProgress?.call(const BackupProgress(stage: 'importingDatabase'));
-      final currentDb = File(p.join(docsDir.path, _dbFileName));
-      final backupDb = File(p.join(docsDir.path, '$_dbFileName.bak'));
+      final currentDb = File(p.join(docsDir.path, databaseFileName));
+      final backupDb = File(p.join(docsDir.path, '$databaseFileName.bak'));
 
       // 关闭当前数据库由调用方负责（在调用 importData 之前）
 
@@ -227,8 +231,8 @@ class BackupService {
       await importDbFile.copy(currentDb.path);
 
       // 同时删除可能存在的 WAL 和 SHM 文件
-      final walFile = File(p.join(docsDir.path, '$_dbFileName-wal'));
-      final shmFile = File(p.join(docsDir.path, '$_dbFileName-shm'));
+      final walFile = File(p.join(docsDir.path, '$databaseFileName-wal'));
+      final shmFile = File(p.join(docsDir.path, '$databaseFileName-shm'));
       if (await walFile.exists()) await walFile.delete();
       if (await shmFile.exists()) await shmFile.delete();
 
@@ -250,8 +254,9 @@ class BackupService {
     } catch (e) {
       // 导入失败：尝试从 .bak 恢复
       final docsPath = docsDir.path;
-      final backupDb = File(p.join(docsPath, '$_dbFileName.bak'));
-      final currentDb = File(p.join(docsPath, _dbFileName));
+      final databaseFileName = await _currentDatabaseFileName();
+      final backupDb = File(p.join(docsPath, '$databaseFileName.bak'));
+      final currentDb = File(p.join(docsPath, databaseFileName));
       if (await backupDb.exists() && !await currentDb.exists()) {
         await backupDb.rename(currentDb.path);
       }
@@ -261,6 +266,12 @@ class BackupService {
         await tempDir.delete(recursive: true);
       }
     }
+  }
+
+  Future<String> _currentDatabaseFileName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final profile = EchoLoopProfile.fromId(prefs.getString(activeProfileKey));
+    return profile == null ? _dbFileName : profileDatabaseFileName(profile);
   }
 
   // ---- 私有方法 ----

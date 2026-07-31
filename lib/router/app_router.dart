@@ -18,6 +18,7 @@ import '../features/auth/screens/email_sign_in_screen.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/password_sign_in_screen.dart';
 import '../features/auth/providers/auth_providers.dart';
+import '../providers/profile_provider.dart';
 import '../features/official_collections/screens/discover_collections_screen.dart';
 import '../features/official_collections/screens/official_collection_detail_screen.dart';
 import '../features/podcast/podcast_models.dart';
@@ -46,6 +47,7 @@ import '../screens/pdf_preview_screen.dart';
 import '../screens/backup_restore_screen.dart';
 import '../screens/flashcard_screen.dart';
 import '../screens/activity_calendar_screen.dart';
+import '../screens/profile_selection_screen.dart';
 import 'main_shell.dart';
 
 /// 全局根导航器 key
@@ -64,6 +66,7 @@ abstract class AppRoutes {
   /// 隐藏的邮箱密码登录入口（App Store / Google Play 审核员专用）。
   static const passwordSignIn = '/login/password';
   static const account = '/account';
+  static const profileSelect = '/profile-select';
 
   /// Podcast 搜索与订阅统一页（全屏，两个入口共用）。
   static const podcastSubscribe = '/podcast-subscribe';
@@ -234,6 +237,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     observers: [AnalyticsObserver(analyticsService)],
     redirect: (context, state) {
       final isAuthenticated = ref.read(isAuthenticatedProvider);
+      final profileSelectionRequired = ref.read(
+        profileSelectionRequiredProvider,
+      );
       final isAuthRoute =
           state.uri.path == AppRoutes.login ||
           state.uri.path == AppRoutes.emailSignIn ||
@@ -245,6 +251,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (!isAuthenticated && state.uri.path == AppRoutes.account) {
         return AppRoutes.settings;
       }
+      if (profileSelectionRequired &&
+          state.uri.path != AppRoutes.profileSelect) {
+        return AppRoutes.profileSelect;
+      }
       // /onboarding/survey 自身路径必须早返，否则在拦截路径上产生死循环
       if (state.uri.path == AppRoutes.onboardingSurvey) return null;
       // 首启新用户、未完成且未学习过 → 强制进入问卷
@@ -255,6 +265,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      GoRoute(
+        path: AppRoutes.profileSelect,
+        builder: (context, state) => const ProfileSelectionScreen(),
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
             MainShell(navigationShell: navigationShell),

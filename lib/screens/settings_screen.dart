@@ -21,6 +21,7 @@ import '../providers/offline_asr_settings_provider.dart';
 import '../providers/tts/tts_settings_provider.dart';
 import '../services/tts/tts_engine.dart';
 import '../providers/package_info_provider.dart';
+import '../providers/profile_provider.dart';
 import '../providers/reminder_settings_provider.dart';
 import '../providers/sentence_ai_provider.dart';
 import '../providers/settings_provider.dart';
@@ -47,6 +48,7 @@ import '../services/orphan_file_cleanup_service.dart';
 import '../services/temp_cleanup_service.dart';
 import '../utils/file_size.dart';
 import '../services/demo_data_seeder.dart';
+import '../services/profile_service.dart';
 import '../models/dict_entry.dart';
 import '../services/dictionary_service.dart';
 import '../theme/app_theme.dart';
@@ -153,6 +155,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       context,
       title: l10n.account,
       children: [
+        ListTile(
+          leading: const Icon(Icons.people_alt_outlined),
+          title: const Text('学习者'),
+          subtitle: Text(ref.watch(activeProfileProvider).displayName),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push(AppRoutes.profileSelect),
+        ),
         ListTile(
           leading: _settingsSvgIcon('assets/icon/account-1.svg'),
           title: Text(l10n.account),
@@ -1033,7 +1042,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     controller.setDemoModeLoading(true);
 
     // 记住当前数据库名称，异常时用于恢复连接
-    final currentDbName = enabled ? 'echo_loop.db' : 'echo_loop_demo.db';
+    final activeProfile = ref.read(activeProfileProvider);
+    final currentDbName = enabled
+        ? profileDatabaseFileName(activeProfile)
+        : 'echo_loop_demo.db';
 
     try {
       // Step 1: 关闭旧数据库（避免 Drift "multiple databases" 警告）
@@ -1047,7 +1059,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         switchAppDatabase(demoDb, ref);
       } else {
         // Step 2b: 创建 prod 库
-        final prodDb = AppDatabase(openConnectionWithName('echo_loop.db'));
+        final prodDb = AppDatabase(
+          openConnectionWithName(profileDatabaseFileName(activeProfile)),
+        );
         // Step 3b: 切换指向
         switchAppDatabase(prodDb, ref);
         // 清理演示文件（demo 数据库已关闭）

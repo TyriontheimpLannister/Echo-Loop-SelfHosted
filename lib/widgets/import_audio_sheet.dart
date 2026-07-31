@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../features/audio_import/audio_import_models.dart';
 import '../features/audio_import/audio_import_provider.dart';
 import '../features/audio_import/homeschooling_package_controller.dart';
+import '../features/audio_import/homeschooling_transfer_service.dart';
 import '../features/audio_import/subtitle_pairing.dart';
 import '../features/baidu_netdisk/models/cloud_drive_models.dart';
 import '../features/baidu_netdisk/providers/baidu_netdisk_import_controller.dart';
@@ -17,6 +19,8 @@ import '../features/remote_config/remote_config.dart';
 import '../features/remote_config/remote_config_providers.dart';
 import '../l10n/app_localizations.dart';
 import '../models/audio_item.dart';
+import '../providers/profile_provider.dart';
+import '../services/profile_service.dart';
 import '../theme/app_theme.dart';
 import 'add_audio_dialog.dart';
 import 'common/form_input_style.dart';
@@ -82,8 +86,7 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
     final cloudDriveImportEnabled = ref.watch(
       remoteFeatureEnabledProvider(RemoteFeature.cloudDriveImport),
     );
-    final busy =
-        _isBusy(state) || baiduState.isBusy || _homeSchoolingReceiving;
+    final busy = _isBusy(state) || baiduState.isBusy || _homeSchoolingReceiving;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return PopScope(
@@ -365,7 +368,9 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
       final file = File(path);
       if (!mounted) return;
       Navigator.pop(context);
-      final controller = ref.read(homeschoolingImportControllerProvider.notifier);
+      final controller = ref.read(
+        homeschoolingImportControllerProvider.notifier,
+      );
       await controller.importFromFile(file);
       final state = ref.read(homeschoolingImportControllerProvider);
       if (!mounted) return;
@@ -387,9 +392,9 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
       controller.reset();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('打开 HomeSchooling 包失败：$error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('打开 HomeSchooling 包失败：$error')));
     }
   }
 
@@ -469,13 +474,48 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
     );
     passwordController.dispose();
     if (password == null || !mounted) return;
-    setState(() => _step = _ImportStep.onlineReceive);
-    await _receiveWithController(password: password, contentMode: contentMode);
+
+    try {
+      final transfer = HomeSchoolingTransferService();
+      final children = await transfer.loadChildren(password);
+      if (!mounted) return;
+      final profile = ref.read(activeProfileProvider);
+      final prefs = await SharedPreferences.getInstance();
+      final savedSlug = readHomeSchoolingChildSlug(prefs, profile);
+      HomeSchoolingChild? child;
+      if (savedSlug != null) {
+        for (final candidate in children) {
+          if (candidate.slug == savedSlug) {
+            child = candidate;
+            break;
+          }
+        }
+      }
+      if (!context.mounted) return;
+      final safeContext = context;
+      child ??= children.length == 1
+          ? children.first
+          : await _chooseHomeSchoolingChildForReceive(safeContext, children);
+      if (child == null || !context.mounted) return;
+      await saveHomeSchoolingChildSlug(prefs, profile, child.slug);
+      setState(() => _step = _ImportStep.onlineReceive);
+      await _receiveWithController(
+        password: password,
+        contentMode: contentMode,
+        childSlug: child.slug,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('读取 HomeSchooling 孩子列表失败：$error')));
+    }
   }
 
   Future<void> _receiveWithController({
     required String password,
     required String contentMode,
+    required String childSlug,
   }) async {
     if (!mounted) return;
     final controller = ref.read(homeschoolingImportControllerProvider.notifier);
@@ -484,6 +524,7 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
       await controller.receiveFromHomeSchooling(
         password: password,
         contentMode: contentMode,
+        childSlug: childSlug,
       );
       final state = ref.read(homeschoolingImportControllerProvider);
       if (!mounted) return;
@@ -498,15 +539,10 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
           ),
         );
         setState(() => _step = _ImportStep.completed);
-        _outcome = (
-          added: const [],
-          duplicates: const [],
-        );
+        _outcome = (added: const [], duplicates: const []);
       } else if (state is HomeschoolingImportFailure) {
         messenger.showSnackBar(
-          SnackBar(
-            content: Text('在线接收 HomeSchooling 包失败：${state.message}'),
-          ),
+          SnackBar(content: Text('在线接收 HomeSchooling 包失败：${state.message}')),
         );
         setState(() => _step = _ImportStep.chooseSource);
       }
@@ -525,6 +561,25 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
     }
     await _cancelUrlImport();
   }
+}
+
+Future<HomeSchoolingChild?> _chooseHomeSchoolingChildForReceive(
+  BuildContext context,
+  List<HomeSchoolingChild> children,
+) {
+  return showDialog<HomeSchoolingChild>(
+    context: context,
+    builder: (dialogContext) => SimpleDialog(
+      title: const Text('接收哪个孩子的任务'),
+      children: [
+        for (final child in children)
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(dialogContext).pop(child),
+            child: Text(child.name),
+          ),
+      ],
+    ),
+  );
 }
 
 class _ImportHeader extends StatelessWidget {

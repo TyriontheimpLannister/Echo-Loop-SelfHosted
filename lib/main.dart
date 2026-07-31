@@ -15,6 +15,7 @@ import 'database/app_database.dart';
 import 'database/providers.dart';
 import 'database/migration/sp_to_drift_migration.dart';
 import 'providers/package_info_provider.dart';
+import 'providers/profile_provider.dart';
 import 'providers/dictionary_provider.dart';
 import 'providers/settings_provider.dart';
 import 'router/app_router.dart';
@@ -48,6 +49,7 @@ import 'package:path_provider/path_provider.dart';
 import 'services/asr/asr_model_manager.dart';
 import 'services/asr/offline_asr_engine.dart';
 import 'services/app_logger.dart';
+import 'services/profile_service.dart';
 import 'services/tts/kokoro_model_manager.dart';
 import 'services/tts/piper_model_manager.dart';
 import 'services/tts/piper_voices.dart';
@@ -89,6 +91,8 @@ void main() async {
   // 检查是否处于演示模式
   final prefs = await SharedPreferences.getInstance();
   final isDemoMode = prefs.getBool('demo_mode') ?? false;
+  final activeProfile = await prepareProfile(prefs);
+  final profileSelectionRequired = prefs.getString(activeProfileKey) == null;
 
   // 远程配置：启动期只同步读取本地缓存/默认值，不触发网络请求，避免网络慢阻塞首帧。
   // 下游 UI 只读取 provider 暴露的 resolved config；远端刷新由 MainShell 首帧后后台执行。
@@ -142,7 +146,9 @@ void main() async {
       readInitialAiTranscriptionAutoMergeEnabledSync(prefs);
 
   // 初始化数据库（演示模式使用独立数据库文件）
-  final dbFileName = isDemoMode ? 'echo_loop_demo.db' : 'echo_loop.db';
+  final dbFileName = isDemoMode
+      ? 'echo_loop_demo.db'
+      : profileDatabaseFileName(activeProfile);
   final database = AppDatabase(openConnectionWithName(dbFileName));
   initAppDatabase(database);
 
@@ -357,6 +363,10 @@ void main() async {
           packageInfoProvider.overrideWithValue(packageInfo),
           isFirstLaunchProvider.overrideWithValue(isFirstLaunch),
           sharedPreferencesProvider.overrideWithValue(prefs),
+          initialProfileProvider.overrideWithValue(activeProfile),
+          initialProfileSelectionRequiredProvider.overrideWithValue(
+            profileSelectionRequired,
+          ),
           initialOnboardingCompletedProvider.overrideWithValue(
             onboardingCompleted,
           ),

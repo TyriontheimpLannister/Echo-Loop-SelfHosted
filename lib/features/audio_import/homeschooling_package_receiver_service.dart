@@ -85,8 +85,12 @@ class HomeSchoolingPackageReceiverService {
   Future<HomeSchoolingPackageReceiveResult> receiveLatestPackage({
     required String password,
     required String contentMode,
+    String? childSlug,
   }) async {
-    final taskId = await _pickLatestFinishedTaskId(password);
+    final taskId = await _pickLatestFinishedTaskId(
+      password,
+      childSlug: childSlug,
+    );
     final escapedTaskId = Uri.encodeComponent(taskId.toString());
     final path = _exportPath.replaceAll('{task_id}', escapedTaskId);
     final response = await _request(
@@ -108,13 +112,19 @@ class HomeSchoolingPackageReceiverService {
         'HomeSchooling 返回了未知版本的听写包。',
       );
     }
+    if (childSlug != null && package.childSlug != childSlug) {
+      throw const HomeSchoolingPackageReceiveException('收到的任务不属于当前学习者，已停止导入。');
+    }
     if (package.items.isEmpty) {
       throw const HomeSchoolingPackageReceiveException('这个任务还没有可导入的句子音频。');
     }
     return HomeSchoolingPackageReceiveResult(package: package);
   }
 
-  Future<int> _pickLatestFinishedTaskId(String password) async {
+  Future<int> _pickLatestFinishedTaskId(
+    String password, {
+    String? childSlug,
+  }) async {
     final taskResponse = await _request(
       () => _dio.get<dynamic>(
         '/parent/dictation/api/tasks',
@@ -128,9 +138,13 @@ class HomeSchoolingPackageReceiverService {
     }
     final tasks = <Map<String, dynamic>>[];
     for (final entry in taskResponse.data as List) {
-      if (entry is Map<String, dynamic> && entry['status'] == 'done') {
-        tasks.add(entry);
+      if (entry is! Map<String, dynamic> || entry['status'] != 'done') continue;
+      if (childSlug != null) {
+        final taskChild =
+            entry['child_slug'] ?? entry['child'] ?? entry['childSlug'];
+        if (taskChild is! String || taskChild != childSlug) continue;
       }
+      tasks.add(entry);
     }
     tasks.sort(
       (a, b) => ((b['id'] as num?)?.toInt() ?? 0).compareTo(

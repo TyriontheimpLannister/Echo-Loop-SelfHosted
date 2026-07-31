@@ -12,6 +12,7 @@ import '../../database/providers.dart';
 import '../../providers/audio_library_provider.dart';
 import '../../providers/collection_provider.dart';
 import '../../providers/audio_sentences_provider.dart';
+import '../../providers/profile_provider.dart';
 import '../../models/audio_item.dart';
 import '../../models/sentence.dart';
 import 'homeschooling_package_exporter.dart';
@@ -64,7 +65,7 @@ class HomeschoolingImportController
       final result = await importer.importJsonString(
         await file.readAsString(),
         dao: ref.read(audioItemDaoProvider),
-        childSlug: '',
+        childSlug: ref.read(activeProfileProvider).id,
         audioLibrary: ref.read(audioLibraryProvider.notifier),
         audioLibraryState: ref.read(audioLibraryProvider),
         collectionList: ref.read(collectionListProvider.notifier),
@@ -84,6 +85,7 @@ class HomeschoolingImportController
   Future<void> receiveFromHomeSchooling({
     required String password,
     required String contentMode,
+    required String childSlug,
   }) async {
     state = const HomeschoolingImportRunning();
     try {
@@ -91,11 +93,12 @@ class HomeschoolingImportController
       final received = await receiver.receiveLatestPackage(
         password: password,
         contentMode: contentMode,
+        childSlug: childSlug,
       );
       final result = await HomeschoolingPackageImporter().importPackage(
         received.package,
         dao: ref.read(audioItemDaoProvider),
-        childSlug: '',
+        childSlug: ref.read(activeProfileProvider).id,
         audioLibrary: ref.read(audioLibraryProvider.notifier),
         audioLibraryState: ref.read(audioLibraryProvider),
         collectionList: ref.read(collectionListProvider.notifier),
@@ -147,6 +150,7 @@ extension HomeschoolingExporterPrime on WidgetRef {
       return await exporter.buildPackage(
         dao: read(audioItemDaoProvider),
         audioItem: item,
+        childSlug: read(activeProfileProvider).id,
       );
     } finally {
       exporter.primeExtraSentences(const <Sentence>[]);
