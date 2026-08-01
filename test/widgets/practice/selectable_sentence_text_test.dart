@@ -9,8 +9,6 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:dio/dio.dart';
-import 'package:echo_loop/features/remote_config/remote_config.dart';
-import 'package:echo_loop/features/remote_config/remote_config_providers.dart';
 import 'package:echo_loop/features/onboarding_survey/providers/onboarding_survey_provider.dart';
 import 'package:echo_loop/database/daos/saved_word_dao.dart';
 import 'package:echo_loop/database/providers.dart';
@@ -341,49 +339,8 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.android),
   );
 
-  testWidgets('自定义操作条显示复制、收藏和问 AI', (tester) async {
-    await tester.pumpWidget(
-      wrap(
-        overrides: [
-          remoteFeatureEnabledProvider(
-            RemoteFeature.aiChatAssistant,
-          ).overrideWithValue(true),
-        ],
-      ),
-    );
-    await tapWord(tester, 'beta');
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const Key('selection_toolbar_button_Copy')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('selection_toolbar_button_Save')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('selection_toolbar_button_Ask AI')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('selection_toolbar_surface')),
-      findsOneWidget,
-    );
-    expect(find.text('Share'), findsNothing);
-    expect(find.text('Select all'), findsNothing);
-  });
-
-  testWidgets('AI 远程开关关闭时操作条仍显示复制和收藏', (tester) async {
-    await tester.pumpWidget(
-      wrap(
-        overrides: [
-          remoteFeatureEnabledProvider(
-            RemoteFeature.aiChatAssistant,
-          ).overrideWithValue(false),
-        ],
-      ),
-    );
+  testWidgets('自定义操作条只显示复制和收藏', (tester) async {
+    await tester.pumpWidget(wrap());
     await tapWord(tester, 'beta');
     await tester.pumpAndSettle();
 
@@ -399,6 +356,12 @@ void main() {
       find.byKey(const Key('selection_toolbar_button_Ask AI')),
       findsNothing,
     );
+    expect(
+      find.byKey(const ValueKey('selection_toolbar_surface')),
+      findsOneWidget,
+    );
+    expect(find.text('Share'), findsNothing);
+    expect(find.text('Select all'), findsNothing);
   });
 
   testWidgets('收藏多词选区：按词汇规则归一化、保存来源并保留查词现场', (tester) async {
@@ -418,9 +381,6 @@ void main() {
           savedWordDaoProvider.overrideWithValue(dao),
           usageOverride(),
           notificationPermissionOverride(),
-          remoteFeatureEnabledProvider(
-            RemoteFeature.aiChatAssistant,
-          ).overrideWithValue(false),
         ],
       ),
     );

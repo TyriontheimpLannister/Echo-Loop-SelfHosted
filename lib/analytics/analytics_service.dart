@@ -61,8 +61,7 @@ class AnalyticsService {
 
   /// 注册 super properties。
   ///
-  /// 之后所有事件都会自动附加这些属性（仅 PostHog 通道生效；
-  /// 其他通道 no-op）。值在事件发出时被冻结，不会被未来覆盖。
+  /// 家庭版由本地日志通道记录这些属性，不会上传到第三方。
   /// 用户未同意采集时静默丢弃。
   Future<void> registerSuperProperties(Map<String, Object> properties) async {
     if (!_consent.hasConsented) return;

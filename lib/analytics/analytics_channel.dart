@@ -1,12 +1,11 @@
 /// 上报通道抽象接口（Strategy Pattern）
 ///
-/// 业务代码不直接依赖 Firebase/友盟，只通过此接口上报事件。
-/// 具体实现见 [FirebaseChannel]、[UmengChannel]、[LogOnlyChannel]。
+/// 业务代码只依赖此接口；家庭版实现不会连接第三方分析平台。
+/// 自托管家庭版使用本地 [LogOnlyChannel] 实现。
 library;
 
 /// 分析上报通道
 ///
-/// 每个实现类封装一个第三方 SDK（Firebase Analytics、友盟等）。
 /// [AnalyticsService] 持有一个 Channel 实例，将事件转发到此接口。
 abstract class AnalyticsChannel {
   /// 通道名称（用于日志和调试）
@@ -31,7 +30,7 @@ abstract class AnalyticsChannel {
   ///
   /// 调用后，本地 SDK 之后发出的所有事件都会自动附加这些属性，
   /// 值在事件发出时被冻结，不会被未来覆盖。
-  /// 仅 PostHog 实现实际行为；其他通道（Firebase / 友盟 / LogOnly）no-op。
+  /// 家庭版的 LogOnly 实现仅写入本地日志。
   ///
   /// 与 [setUserProperty] 的区别：
   /// - super property 写到事件上，可查"事件发生时的状态"
@@ -42,6 +41,6 @@ abstract class AnalyticsChannel {
 
   /// 注销 super property。
   ///
-  /// PostHog 可移除后续事件自动附加的属性；其他通道 no-op。
+  /// LogOnly 通道只更新本地诊断日志。
   Future<void> unregisterSuperProperty(String name);
 }

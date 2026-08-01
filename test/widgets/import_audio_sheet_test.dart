@@ -16,8 +16,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:echo_loop/features/audio_import/audio_import_models.dart';
 import 'package:echo_loop/features/audio_import/audio_import_provider.dart';
+import 'package:echo_loop/features/audio_import/homeschooling_package_controller.dart';
+import 'package:echo_loop/features/audio_import/homeschooling_package_receiver_service.dart';
+import 'package:echo_loop/features/audio_import/homeschooling_transfer_service.dart';
 import 'package:echo_loop/models/audio_item.dart';
 import 'package:echo_loop/providers/audio_library_provider.dart';
 import 'package:echo_loop/providers/collection_provider.dart';
@@ -56,6 +60,55 @@ class _ImmediateAudioImportController extends AudioImportController {
     state = AudioImportCompleted(item);
     return item;
   }
+}
+
+class _BlockingHomeSchoolingTransferService
+    extends HomeSchoolingTransferService {
+  _BlockingHomeSchoolingTransferService()
+    : super(dio: Dio(BaseOptions(baseUrl: 'http://homeschooling.test')));
+
+  final childrenCompleter = Completer<List<HomeSchoolingChild>>();
+
+  @override
+  Future<List<HomeSchoolingChild>> loadChildren(String password) =>
+      childrenCompleter.future;
+}
+
+class _SuccessfulHomeSchoolingImportController
+    extends HomeschoolingImportController {
+  final importedTaskIds = <int>[];
+  final contentModes = <String>[];
+
+  @override
+  HomeschoolingImportState build() => const HomeschoolingImportIdle();
+
+  @override
+  Future<HomeschoolingImportState> receiveTaskFromHomeSchooling({
+    required int taskId,
+    required String password,
+    required String contentMode,
+    required String childSlug,
+  }) async {
+    importedTaskIds.add(taskId);
+    contentModes.add(contentMode);
+    state = HomeschoolingImportSuccess(3, taskId == 10 ? 1 : 0, 0, 'Task');
+    return state;
+  }
+}
+
+class _StaticHomeSchoolingReceiverService
+    extends HomeSchoolingPackageReceiverService {
+  _StaticHomeSchoolingReceiverService(this.tasks)
+    : super(dio: Dio(BaseOptions(baseUrl: 'http://homeschooling.test')));
+
+  final List<HomeSchoolingTask> tasks;
+
+  @override
+  Future<List<HomeSchoolingTask>> loadTasks({
+    required String password,
+    String? childSlug,
+    int? childId,
+  }) async => tasks;
 }
 
 class _TokenCredentialRepository implements BaiduCredentialRepository {
@@ -536,6 +589,7 @@ void main() {
     expect(find.text('Import from Cloud Storage'), findsOneWidget);
     expect(find.text('Choose a cloud drive provider'), findsNothing);
     expect(find.text('Baidu Netdisk'), findsNothing);
+    expect(find.text('从 HomeSchooling 包导入'), findsNothing);
 
     final localTop = tester
         .getTopLeft(find.byKey(const ValueKey('import-option-local-file')))
@@ -548,6 +602,97 @@ void main() {
         .dy;
     expect(localTop, lessThan(cloudTop));
     expect(cloudTop, lessThan(linkTop));
+  });
+
+  testWidgets('HomeSchooling 密码后展示全部任务并支持多选逐项导入', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final transfer = _BlockingHomeSchoolingTransferService();
+    final receiver = _StaticHomeSchoolingReceiverService([
+      HomeSchoolingTask(
+        id: 11,
+        name: 'Lesson A',
+        childId: 1,
+        status: 'done',
+        totalItems: 3,
+        createdAt: DateTime(2026, 7, 31),
+      ),
+      HomeSchoolingTask(
+        id: 10,
+        name: 'Lesson B',
+        childId: 1,
+        status: 'done',
+        totalItems: 2,
+        createdAt: DateTime(2026, 7, 30),
+        archivedAt: DateTime(2026, 7, 31),
+      ),
+      const HomeSchoolingTask(
+        id: 9,
+        name: 'Still generating',
+        childId: 1,
+        status: 'pending',
+        totalItems: 2,
+      ),
+    ]);
+    late _SuccessfulHomeSchoolingImportController importController;
+    await tester.pumpWidget(
+      _buildApp(
+        locale: const Locale('zh'),
+        overrides: [
+          homeSchoolingTransferServiceProvider.overrideWithValue(transfer),
+          homeSchoolingPackageReceiverServiceProvider.overrideWithValue(
+            receiver,
+          ),
+          homeschoolingImportControllerProvider.overrideWith(
+            () => importController = _SuccessfulHomeSchoolingImportController(),
+          ),
+        ],
+      ),
+    );
+    await tester.tap(find.text('Open Import'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('在线接收 HomeSchooling 包').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('输入密码并查看任务'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'parent-password');
+    await tester.tap(find.text('查看任务'));
+    await tester.pump();
+
+    expect(find.text('正在读取任务，请稍候…'), findsOneWidget);
+    expect(find.text('读取中…'), findsOneWidget);
+
+    transfer.childrenCompleter.complete(const [
+      HomeSchoolingChild(id: 1, slug: 'francis', name: 'Francis'),
+    ]);
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('Lesson A'), findsOneWidget);
+    expect(find.text('Lesson B'), findsOneWidget);
+    expect(find.text('Still generating'), findsOneWidget);
+    expect(find.text('音频生成中'), findsOneWidget);
+    expect(
+      tester
+          .widget<RadioGroup<String>>(find.byType(RadioGroup<String>))
+          .groupValue,
+      'passage',
+    );
+    expect(find.text('整篇文章（保留原句边界）'), findsOneWidget);
+
+    await tester.tap(find.text('Lesson A'));
+    await tester.pump();
+    await tester.tap(find.text('Lesson B'));
+    await tester.pump();
+    await tester.tap(find.text('导入所选（2 个任务）'));
+    await tester.pumpAndSettle();
+
+    expect(importController.importedTaskIds, [11, 10]);
+    expect(importController.contentModes, ['passage', 'passage']);
+    expect(find.text('本次导入完成'), findsOneWidget);
+    expect(find.text('成功 2 个任务；失败 0 个任务。'), findsOneWidget);
+    expect(find.text('已导入 3 项；重复 0 项'), findsOneWidget);
+    expect(find.text('已导入 3 项；重复 1 项'), findsOneWidget);
   });
 
   testWidgets('远程配置关闭时隐藏网盘导入入口', (tester) async {

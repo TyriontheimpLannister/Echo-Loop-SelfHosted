@@ -13,11 +13,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../features/chatbot/chatbot_flags.dart';
-import '../../features/chatbot/widgets/selection_toolbar.dart';
-import '../../features/chatbot/widgets/sentence_chat_button.dart';
-import '../../features/remote_config/remote_config.dart';
-import '../../features/remote_config/remote_config_providers.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/speech_practice_models.dart';
 import '../../providers/saved_word_provider.dart';
@@ -26,6 +21,7 @@ import '../../utils/saved_text_index.dart';
 import '../../utils/text_normalize.dart';
 import '../common/platform_selection_feedback.dart';
 import '../common/platform_text_selection_style.dart';
+import '../common/selection_toolbar.dart';
 import '../dictionary/dictionary_panel_host.dart';
 import 'sentence_word_selection.dart';
 
@@ -335,19 +331,13 @@ class _SelectableSentenceTextState
 
   // -- 选区操作条 --
 
-  /// 句子正文只保留复制、收藏与问 AI，不暴露系统分享、全选等额外动作。
+  /// 句子正文只保留复制与收藏，不暴露系统分享、全选等额外动作。
   Widget _buildSelectionToolbar(BuildContext context, EditableTextState state) {
     final l10n = AppLocalizations.of(context)!;
     final selectedWord = normalizeWord(_selectedTextOf(state));
     final isSaved =
         _pendingSavedWordStates[selectedWord] ??
         _savedWordTexts.contains(selectedWord);
-    final aiEnabled = shouldShowAiChatAssistantEntry(
-      chatbotEnabled: kChatbotEnabled,
-      remoteEnabled: ref.read(
-        remoteFeatureEnabledProvider(RemoteFeature.aiChatAssistant),
-      ),
-    );
     return SelectionToolbar(
       anchors: SelectionToolbar.anchorsForEditableText(state),
       actions: [
@@ -363,11 +353,6 @@ class _SelectableSentenceTextState
             onPressed: () => unawaited(
               _handleToggleSave(state, selectedWord, currentlySaved: isSaved),
             ),
-          ),
-        if (aiEnabled)
-          SelectionToolbarAction(
-            label: l10n.chatFollowUp,
-            onPressed: () => _handleAskAi(state),
           ),
       ],
     );
@@ -451,25 +436,6 @@ class _SelectableSentenceTextState
         ),
       ),
       SelectionChangedCause.toolbar,
-    );
-  }
-
-  /// 关闭选区与词典后打开同一句子的聊天会话，并把选中文字放入引用待发送区。
-  void _handleAskAi(EditableTextState state) {
-    final selectedText = _selectedTextOf(state).trim();
-    if (selectedText.isEmpty) return;
-    final sourceSentence = widget.origin.sentenceText;
-    final sentenceText = sourceSentence == null || sourceSentence.trim().isEmpty
-        ? _fullText
-        : sourceSentence;
-    _clearEditableSelection(state);
-    _closeOwnedDictionary();
-    unawaited(
-      showSentenceChatbotSheet(
-        context: context,
-        sentenceText: sentenceText,
-        initialQuote: selectedText,
-      ),
     );
   }
 

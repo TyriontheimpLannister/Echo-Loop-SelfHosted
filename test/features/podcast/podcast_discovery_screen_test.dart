@@ -1,5 +1,4 @@
 import 'package:echo_loop/features/auth/providers/auth_providers.dart';
-import 'package:echo_loop/features/official_collections/providers/discover_podcasts_provider.dart';
 import 'package:echo_loop/features/podcast/podcast_models.dart';
 import 'package:echo_loop/features/podcast/podcast_preview_provider.dart';
 import 'package:echo_loop/features/podcast/podcast_repository.dart';
@@ -18,7 +17,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../helpers/mock_providers.dart';
 import '../../helpers/test_app.dart';
-import '../official_collections/fixtures/catalog_fixtures.dart';
 
 /// 搜索服务替身：返回预置结果，记录调用词。
 class _FakeSearchService extends PodcastSearchService {
@@ -76,24 +74,11 @@ TestCollectionList Function() _seeded(String feedUrl) =>
     );
 
 void main() {
-  testWidgets('搜索框为空时展示精选播客列表', (tester) async {
-    await tester.pumpWidget(
-      createTestApp(
-        const PodcastDiscoveryScreen(),
-        overrides: [
-          discoverPodcastsProvider.overrideWith(
-            (ref) => [
-              makeCatalogPodcast(id: 'p1', title: '6 Minute English'),
-              makeCatalogPodcast(id: 'p2', title: 'VOA Learning English'),
-            ],
-          ),
-        ],
-      ),
-    );
+  testWidgets('搜索框为空时提示输入关键词或链接', (tester) async {
+    await tester.pumpWidget(createTestApp(const PodcastDiscoveryScreen()));
     await tester.pumpAndSettle();
 
-    expect(find.text('6 Minute English'), findsOneWidget);
-    expect(find.text('VOA Learning English'), findsOneWidget);
+    expect(find.text('Search podcasts or paste a link'), findsWidgets);
   });
 
   testWidgets('输入关键词展示 Apple 搜索结果', (tester) async {
@@ -108,10 +93,7 @@ void main() {
     await tester.pumpWidget(
       createTestApp(
         const PodcastDiscoveryScreen(),
-        overrides: [
-          discoverPodcastsProvider.overrideWith((ref) => const []),
-          podcastSearchServiceProvider.overrideWithValue(fakeSearch),
-        ],
+        overrides: [podcastSearchServiceProvider.overrideWithValue(fakeSearch)],
       ),
     );
     await tester.pumpAndSettle();
@@ -130,7 +112,6 @@ void main() {
       createTestApp(
         const PodcastDiscoveryScreen(),
         overrides: [
-          discoverPodcastsProvider.overrideWith((ref) => const []),
           podcastPreviewProvider(url).overrideWith(
             (ref) async => const PodcastPreviewData(
               meta: PodcastFeedMeta(
@@ -163,22 +144,22 @@ void main() {
     expect(find.byIcon(Icons.add_circle_outline), findsOneWidget);
   });
 
-  testWidgets('点精选项的 + 订阅（传订阅输入 URL）后停留在本页', (tester) async {
+  testWidgets('点搜索结果的 + 订阅后停留在本页', (tester) async {
     final fakeRepo = _FakePodcastRepository();
+    final fakeSearch = _FakeSearchService([
+      const PodcastSearchResult(
+        id: 'p1',
+        title: '6 Minute English',
+        author: 'BBC',
+        feedUrl: 'https://feeds.bbci.co.uk/6min.rss',
+        applePodcastUrl: 'https://podcasts.apple.com/id262026947',
+      ),
+    ]);
     await tester.pumpWidget(
       createTestApp(
         const PodcastDiscoveryScreen(),
         overrides: [
-          discoverPodcastsProvider.overrideWith(
-            (ref) => [
-              makeCatalogPodcast(
-                id: 'p1',
-                title: '6 Minute English',
-                applePodcastUrl: 'https://podcasts.apple.com/id262026947',
-                rssUrl: 'https://feeds.bbci.co.uk/6min.rss',
-              ),
-            ],
-          ),
+          podcastSearchServiceProvider.overrideWithValue(fakeSearch),
           isAuthenticatedProvider.overrideWithValue(true),
           podcastRepositoryProvider.overrideWithValue(fakeRepo),
         ],
@@ -186,6 +167,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.enterText(find.byType(TextField), 'bbc');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.add_circle_outline).first);
     await tester.pumpAndSettle();
 
@@ -197,20 +181,20 @@ void main() {
     expect(find.text('Added to My Collections'), findsWidgets);
   });
 
-  testWidgets('已订阅的精选项显示「去学习」', (tester) async {
+  testWidgets('已订阅的搜索结果显示「去学习」', (tester) async {
+    final fakeSearch = _FakeSearchService([
+      const PodcastSearchResult(
+        id: 'p1',
+        title: '6 Minute English',
+        author: 'BBC',
+        feedUrl: 'https://feeds.bbci.co.uk/6min.rss',
+      ),
+    ]);
     await tester.pumpWidget(
       createTestApp(
         const PodcastDiscoveryScreen(),
         overrides: [
-          discoverPodcastsProvider.overrideWith(
-            (ref) => [
-              makeCatalogPodcast(
-                id: 'p1',
-                title: '6 Minute English',
-                rssUrl: 'https://feeds.bbci.co.uk/6min.rss',
-              ),
-            ],
-          ),
+          podcastSearchServiceProvider.overrideWithValue(fakeSearch),
           collectionListProvider.overrideWith(
             _seeded('https://feeds.bbci.co.uk/6min.rss'),
           ),
@@ -219,19 +203,28 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.enterText(find.byType(TextField), 'bbc');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
     expect(find.text('Start Practicing'), findsOneWidget);
     expect(find.byIcon(Icons.add_circle_outline), findsNothing);
   });
 
   testWidgets('未登录点 + 弹登录提示且不订阅', (tester) async {
     final fakeRepo = _FakePodcastRepository();
+    final fakeSearch = _FakeSearchService([
+      const PodcastSearchResult(
+        id: 'p1',
+        title: '6 Minute English',
+        author: 'BBC',
+        feedUrl: 'https://feeds.bbci.co.uk/6min.rss',
+      ),
+    ]);
     await tester.pumpWidget(
       createTestApp(
         const PodcastDiscoveryScreen(),
         overrides: [
-          discoverPodcastsProvider.overrideWith(
-            (ref) => [makeCatalogPodcast(id: 'p1', title: '6 Minute English')],
-          ),
+          podcastSearchServiceProvider.overrideWithValue(fakeSearch),
           isAuthenticatedProvider.overrideWithValue(false),
           podcastRepositoryProvider.overrideWithValue(fakeRepo),
         ],
@@ -239,6 +232,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.enterText(find.byType(TextField), 'bbc');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.add_circle_outline).first);
     await tester.pumpAndSettle();
 
@@ -247,23 +243,24 @@ void main() {
   });
 
   testWidgets('点 item 内容区打开单集预览页', (tester) async {
+    final fakeSearch = _FakeSearchService([
+      const PodcastSearchResult(
+        id: 'p1',
+        title: '6 Minute English',
+        author: 'BBC',
+        feedUrl: 'https://feeds.bbci.co.uk/6min.rss',
+      ),
+    ]);
     await tester.pumpWidget(
       _routed(
-        overrides: [
-          discoverPodcastsProvider.overrideWith(
-            (ref) => [
-              makeCatalogPodcast(
-                id: 'p1',
-                title: '6 Minute English',
-                rssUrl: 'https://feeds.bbci.co.uk/6min.rss',
-              ),
-            ],
-          ),
-        ],
+        overrides: [podcastSearchServiceProvider.overrideWithValue(fakeSearch)],
       ),
     );
     await tester.pumpAndSettle();
 
+    await tester.enterText(find.byType(TextField), 'bbc');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('6 Minute English'));
     await tester.pumpAndSettle();
 

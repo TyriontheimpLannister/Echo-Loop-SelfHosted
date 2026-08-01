@@ -18,7 +18,6 @@ import '../analytics/analytics_providers.dart';
 import '../analytics/models/event_names.dart';
 import '../database/providers.dart';
 import '../features/podcast/podcast_refresh_controller.dart';
-import '../features/remote_config/remote_config_providers.dart';
 import '../providers/app_update_provider.dart';
 import '../providers/audio_library_provider.dart';
 import '../providers/collection_provider.dart';
@@ -59,7 +58,6 @@ class _MainShellState extends ConsumerState<MainShell> {
   ProviderSubscription<ReminderSettings>? _reminderSettingsSubscription;
   ProviderSubscription<int>? _notificationPromptSubscription;
   ProviderSubscription<GuideControllerState>? _guideWaitSubscription;
-  late final RemoteConfigController _remoteConfigController;
   late final AppLifecycleListener _lifecycleListener;
 
   /// 资源库 tab 图标的引导 target key；在整个 shell 生命周期内保持稳定。
@@ -76,13 +74,7 @@ class _MainShellState extends ConsumerState<MainShell> {
   @override
   void initState() {
     super.initState();
-    // 缓存 controller，避免 dispose 阶段从已卸载的 ConsumerState ref 读取 provider。
-    _remoteConfigController = ref.read(remoteConfigProvider.notifier);
-    _lifecycleListener = AppLifecycleListener(
-      onResume: _onAppResume,
-      onHide: _onAppBackground,
-      onPause: _onAppBackground,
-    );
+    _lifecycleListener = AppLifecycleListener(onResume: _onAppResume);
 
     // 版本更新监听提前注册，确保首次触发 appUpdateProvider.build() → 后台检查。
     // 同一版本的重复结果不再弹窗（冷启动后用户未处理 → 回前台不反复打扰）。
@@ -112,8 +104,6 @@ class _MainShellState extends ConsumerState<MainShell> {
       ref
           .read(notificationPermissionServiceProvider)
           .syncSystemAuthorizationStatus();
-      _remoteConfigController.startPeriodicRefresh(forceFirst: true);
-
       AppLogger.log('StartupLoad', 'study bootstrap start');
       try {
         // 学习页是默认落地 tab，先并发预热其首屏必需数据：
@@ -270,7 +260,6 @@ class _MainShellState extends ConsumerState<MainShell> {
 
   @override
   void dispose() {
-    _remoteConfigController.stopPeriodicRefresh();
     _lifecycleListener.dispose();
     _pendingTaskCountSubscription?.close();
     _progressMapSubscription?.close();
@@ -391,18 +380,12 @@ class _MainShellState extends ConsumerState<MainShell> {
     _refreshStudyData();
     unawaited(ref.read(appUpdateProvider.notifier).checkInBackground());
     unawaited(_refreshSubscribedPodcastsInBackground());
-    ref.read(remoteConfigProvider.notifier).startPeriodicRefresh();
     // 回前台时同步系统通知权限状态，覆盖用户在系统设置中手动变更的情况
     unawaited(
       ref
           .read(notificationPermissionServiceProvider)
           .syncSystemAuthorizationStatus(),
     );
-  }
-
-  /// App 离开前台时停止 remote config 前台定时刷新。
-  void _onAppBackground() {
-    ref.read(remoteConfigProvider.notifier).stopPeriodicRefresh();
   }
 
   /// 使用统一控制器静默刷新已订阅播客。

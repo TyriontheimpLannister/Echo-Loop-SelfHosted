@@ -22,7 +22,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../../widgets/common/platform_selection_feedback.dart';
 import '../../../widgets/common/platform_text_selection_style.dart';
 import 'markdown_message.dart';
-import 'selection_toolbar.dart';
+import '../../../widgets/common/selection_toolbar.dart';
 
 /// AI 回答 markdown（可选中）。
 ///

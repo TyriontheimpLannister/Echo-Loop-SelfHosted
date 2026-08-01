@@ -578,7 +578,10 @@ void main() {
 
       expect(item.name, 'lesson');
       // 保留原始格式与扩展名，audioSha256 == originalAudioSha256。
-      expect(item.audioPath, 'audios/imported/sha-original.mp3');
+      expect(
+        item.audioPath?.replaceAll(r'\', '/'),
+        'audios/imported/sha-original.mp3',
+      );
       expect(item.totalDuration, 42);
       expect(item.audioSha256, 'sha-original');
       expect(item.originalAudioSha256, 'sha-original');
@@ -688,7 +691,10 @@ void main() {
         enclosureType: 'audio/mpeg',
       );
 
-      expect(result.relativePath, 'audios/imported/sha-episode.mp3');
+      expect(
+        result.relativePath.replaceAll(r'\', '/'),
+        'audios/imported/sha-episode.mp3',
+      );
       expect(result.durationSeconds, 61);
       expect(result.audioSha256, 'sha-episode');
       expect(result.originalAudioSha256, 'sha-episode');
@@ -712,7 +718,10 @@ void main() {
         enclosureType: 'audio/mpeg',
       );
 
-      expect(result.relativePath, 'audios/imported/sha-episode.mp3');
+      expect(
+        result.relativePath.replaceAll(r'\', '/'),
+        'audios/imported/sha-episode.mp3',
+      );
       expect(await existingFile.readAsBytes(), [9, 9, 9]);
       expect(await _tmpAudioImportFiles(tmpDir), isEmpty);
     });

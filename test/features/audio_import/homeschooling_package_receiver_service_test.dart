@@ -14,8 +14,18 @@ void main() {
             requests.add(options);
             final data = options.path == '/parent/dictation/api/tasks'
                 ? [
-                    {'id': 7, 'status': 'done'},
-                    {'id': 9, 'status': 'done'},
+                    {
+                      'id': 7,
+                      'name': 'Older task',
+                      'status': 'done',
+                      'total_items': 1,
+                    },
+                    {
+                      'id': 9,
+                      'name': 'Latest task',
+                      'status': 'done',
+                      'total_items': 1,
+                    },
                   ]
                 : {
                     'version': 1,
@@ -77,8 +87,8 @@ void main() {
           requests.add(options);
           final data = options.path == '/parent/dictation/api/tasks'
               ? [
-                  {'id': 8, 'status': 'done', 'child_slug': 'learner-b'},
-                  {'id': 9, 'status': 'done', 'child_slug': 'learner-a'},
+                  {'id': 8, 'status': 'done', 'child_id': 2},
+                  {'id': 9, 'status': 'done', 'child_id': 1},
                 ]
               : {
                   'version': 1,
@@ -108,6 +118,7 @@ void main() {
           password: 'parent-password',
           contentMode: 'sentences',
           childSlug: 'learner-a',
+          childId: 1,
         );
 
     expect(
@@ -116,4 +127,60 @@ void main() {
     );
     expect(result.package.childSlug, 'learner-a');
   });
+
+  test(
+    'loads all selected-child tasks and marks only ready tasks importable',
+    () async {
+      final dio = Dio(BaseOptions(baseUrl: 'http://homeschooling.test'));
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: [
+                  {
+                    'id': 12,
+                    'name': 'Ready lesson',
+                    'child_id': 1,
+                    'status': 'done',
+                    'total_items': 4,
+                    'created_at': '2026-07-31T10:00:00',
+                  },
+                  {
+                    'id': 11,
+                    'name': 'Generating lesson',
+                    'child_id': 1,
+                    'status': 'pending',
+                    'total_items': 4,
+                    'archived_at': '2026-07-31T11:00:00',
+                  },
+                  {
+                    'id': 10,
+                    'name': 'Other child',
+                    'child_id': 2,
+                    'status': 'done',
+                    'total_items': 2,
+                  },
+                ],
+              ),
+            );
+          },
+        ),
+      );
+
+      final tasks = await HomeSchoolingPackageReceiverService(
+        dio: dio,
+      ).loadTasks(password: 'parent-password', childId: 1);
+
+      expect(tasks.map((task) => task.name), [
+        'Ready lesson',
+        'Generating lesson',
+      ]);
+      expect(tasks.first.canImport, isTrue);
+      expect(tasks.last.canImport, isFalse);
+      expect(tasks.last.isArchived, isTrue);
+    },
+  );
 }

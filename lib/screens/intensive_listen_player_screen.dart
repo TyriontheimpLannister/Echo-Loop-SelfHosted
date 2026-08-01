@@ -17,7 +17,6 @@ import '../utils/playback_speed.dart';
 import '../utils/wakelock_mixin.dart';
 import '../utils/difficulty_from_ratio.dart';
 import '../database/providers.dart';
-import '../features/chatbot/widgets/sentence_chat_button.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/audio_engine/audio_engine_provider.dart';
 import '../providers/learning_plan_provider.dart';
@@ -702,17 +701,6 @@ class _IntensiveListenPlayerScreenState
                   onPressed: _handleExit,
                 ),
                 actions: [
-                  // AI 助手入口：打开前暂停自动推进（同设置按钮的处理）。
-                  SentenceChatButton(
-                    sentenceText: currentSentence?.text ?? '',
-                    onBeforeOpen: () {
-                      if (playerState.annotationState != null) {
-                        player.onAnnotationUserInteraction();
-                      } else {
-                        player.enterWaitingForUserInBlindMode();
-                      }
-                    },
-                  ),
                   IconButton(
                     icon: const Icon(Icons.tune),
                     onPressed: () {

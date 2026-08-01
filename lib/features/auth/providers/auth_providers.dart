@@ -359,3 +359,8 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
   // [自用补丁] 本地伪登录，绕过"需登录"拦截（ref 保留以兼容 import）。
   return true;
 });
+
+/// 认证入口是否可用。Provider 形式便于自托管构建隐藏入口并在测试中覆盖。
+final authConfiguredProvider = Provider<bool>(
+  (ref) => auth_config.isAuthConfigured,
+);

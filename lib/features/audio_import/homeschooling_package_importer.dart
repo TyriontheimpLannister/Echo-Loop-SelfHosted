@@ -12,6 +12,7 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
 
 import '../../database/daos/audio_item_dao.dart';
@@ -48,10 +49,15 @@ class HomeschoolingPackageImporter {
     AudioFinalizationService? finalizationService,
     AudioRegistrationService? registrationService,
     Uuid? uuid,
+    Future<Duration> Function(File file)? readSegmentDuration,
+    Future<bool> Function(List<File> inputs, File output)? concatenateAudio,
   }) : _finalizationService = finalizationService ?? AudioFinalizationService(),
        _registrationService =
            registrationService ?? AudioRegistrationService(uuid: uuid),
-       _uuid = uuid ?? const Uuid();
+       _uuid = uuid ?? const Uuid(),
+       _readSegmentDuration =
+           readSegmentDuration ?? _readSegmentDurationWithFfprobe,
+       _concatenateAudio = concatenateAudio ?? _concatenateAudioWithFfmpeg;
 
   static const String _kTargetSubdir = 'audios/homeschooling_import';
   static const int _kMaxItemCount = 200;
@@ -60,6 +66,8 @@ class HomeschoolingPackageImporter {
   final AudioFinalizationService _finalizationService;
   final AudioRegistrationService _registrationService;
   final Uuid _uuid;
+  final Future<Duration> Function(File file) _readSegmentDuration;
+  final Future<bool> Function(List<File> inputs, File output) _concatenateAudio;
 
   Future<HomeschoolingPackageImportResult> importJsonString(
     String source, {
@@ -245,7 +253,7 @@ class HomeschoolingPackageImporter {
       );
       final finalized = await _finalizationService.finalize(
         dataDir: dataDir,
-        tempRelativePath: combined,
+        tempRelativePath: combined.relativePath,
         targetSubdir: _kTargetSubdir,
       );
       final registration = await _registrationService.registerSandboxedAudio(
@@ -272,6 +280,7 @@ class HomeschoolingPackageImporter {
         AudioRegistrationAdded(:final item) => await _finishPassageImport(
           item,
           validItems,
+          segmentDurations: combined.segmentDurations,
           dao: dao,
           audioLibrary: audioLibrary,
         ),
@@ -288,12 +297,16 @@ class HomeschoolingPackageImporter {
   Future<HomeschoolingPackageImportResult> _finishPassageImport(
     AudioItem item,
     List<HomeschoolingPackageItem> sourceItems, {
+    required List<Duration> segmentDurations,
     required AudioItemDao dao,
     required AudioLibrary audioLibrary,
   }) async {
     final withMeta = item.copyWith(transcriptSource: TranscriptSource.local);
     await audioLibrary.updateAudioItem(withMeta);
-    await dao.updateTranscriptSrt(withMeta.id, _buildPassageSrt(sourceItems));
+    await dao.updateTranscriptSrt(
+      withMeta.id,
+      buildHomeschoolingPassageSrt(sourceItems, segmentDurations),
+    );
     return HomeschoolingPackageImportResult(
       added: [withMeta],
       duplicates: const [],
@@ -301,7 +314,7 @@ class HomeschoolingPackageImporter {
     );
   }
 
-  Future<String> _concatAudioSegments({
+  Future<_CombinedPassageAudio> _concatAudioSegments({
     required Directory dataDir,
     required List<Uint8List> segments,
     required String format,
@@ -320,58 +333,27 @@ class HomeschoolingPackageImporter {
     }
     final output = File(p.join(tmpDir.path, '$runId-combined.m4a'));
     try {
-      final arguments = <String>['-nostdin', '-y', '-loglevel', 'error'];
+      final durations = <Duration>[];
       for (final input in inputs) {
-        arguments.addAll(['-i', input.path]);
+        final duration = await _readSegmentDuration(input);
+        if (duration <= Duration.zero) {
+          throw const FileSystemException('HomeSchooling 句子音频时长无效。');
+        }
+        durations.add(duration);
       }
-      final filterInputs = List.generate(
-        inputs.length,
-        (index) => '[$index:a:0]',
-      ).join();
-      arguments.addAll([
-        '-filter_complex',
-        '${filterInputs}concat=n=${inputs.length}:v=0:a=1[out]',
-        '-map',
-        '[out]',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '96k',
-        output.path,
-      ]);
-      final session = await FFmpegKit.executeWithArguments(arguments);
-      final returnCode = await session.getReturnCode();
-      if (!ReturnCode.isSuccess(returnCode) || !await output.exists()) {
+      final concatenated = await _concatenateAudio(inputs, output);
+      if (!concatenated || !await output.exists()) {
         throw const FileSystemException('无法合并 HomeSchooling 短文音频。');
       }
-      return p.relative(output.path, from: dataDir.path);
+      return _CombinedPassageAudio(
+        relativePath: p.relative(output.path, from: dataDir.path),
+        segmentDurations: durations,
+      );
     } finally {
       for (final input in inputs) {
         if (await input.exists()) await input.delete();
       }
     }
-  }
-
-  String _buildPassageSrt(List<HomeschoolingPackageItem> items) {
-    var cursor = Duration.zero;
-    final buffer = StringBuffer();
-    for (var index = 0; index < items.length; index++) {
-      final start = cursor;
-      cursor += const Duration(seconds: 2);
-      buffer
-        ..writeln(index + 1)
-        ..writeln('${_formatSrtTime(start)} --> ${_formatSrtTime(cursor)}')
-        ..writeln(items[index].text.replaceAll('\r', ' ').replaceAll('\n', ' '))
-        ..writeln();
-    }
-    return buffer.toString();
-  }
-
-  String _formatSrtTime(Duration value) {
-    String two(int number) => number.toString().padLeft(2, '0');
-    String three(int number) => number.toString().padLeft(3, '0');
-    return '${two(value.inHours)}:${two(value.inMinutes.remainder(60))}:'
-        '${two(value.inSeconds.remainder(60))},${three(value.inMilliseconds.remainder(1000))}';
   }
 
   Future<String> _writeTemp({
@@ -408,4 +390,88 @@ class HomeschoolingPackageImporter {
     final safeText = text.replaceAll('\r', ' ').replaceAll('\n', ' ');
     return '$id\n00:00:00,000 --> 00:00:01,000\n$safeText\n';
   }
+
+  static Future<Duration> _readSegmentDurationWithFfprobe(File file) async {
+    final session = await FFprobeKit.getMediaInformation(file.path, 10000);
+    final seconds = double.tryParse(
+      session.getMediaInformation()?.getDuration() ?? '',
+    );
+    if (seconds == null || !seconds.isFinite || seconds <= 0) {
+      throw FileSystemException('无法读取 HomeSchooling 句子音频时长。', file.path);
+    }
+    return Duration(
+      microseconds: (seconds * Duration.microsecondsPerSecond).round(),
+    );
+  }
+
+  static Future<bool> _concatenateAudioWithFfmpeg(
+    List<File> inputs,
+    File output,
+  ) async {
+    final arguments = <String>['-nostdin', '-y', '-loglevel', 'error'];
+    for (final input in inputs) {
+      arguments.addAll(['-i', input.path]);
+    }
+    final filterInputs = List.generate(
+      inputs.length,
+      (index) => '[$index:a:0]',
+    ).join();
+    arguments.addAll([
+      '-filter_complex',
+      '${filterInputs}concat=n=${inputs.length}:v=0:a=1[out]',
+      '-map',
+      '[out]',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '96k',
+      output.path,
+    ]);
+    final session = await FFmpegKit.executeWithArguments(arguments);
+    final returnCode = await session.getReturnCode();
+    return ReturnCode.isSuccess(returnCode);
+  }
+}
+
+class _CombinedPassageAudio {
+  const _CombinedPassageAudio({
+    required this.relativePath,
+    required this.segmentDurations,
+  });
+
+  final String relativePath;
+  final List<Duration> segmentDurations;
+}
+
+/// 用原始句子音频的真实时长生成整篇字幕，不进行二次语义切句。
+String buildHomeschoolingPassageSrt(
+  List<HomeschoolingPackageItem> items,
+  List<Duration> segmentDurations,
+) {
+  if (items.length != segmentDurations.length) {
+    throw ArgumentError('句子数量与音频时长数量不一致。');
+  }
+  var cursor = Duration.zero;
+  final buffer = StringBuffer();
+  for (var index = 0; index < items.length; index++) {
+    final start = cursor;
+    cursor += segmentDurations[index];
+    buffer
+      ..writeln(index + 1)
+      ..writeln(
+        '${_formatHomeschoolingSrtTime(start)} --> '
+        '${_formatHomeschoolingSrtTime(cursor)}',
+      )
+      ..writeln(items[index].text.replaceAll('\r', ' ').replaceAll('\n', ' '))
+      ..writeln();
+  }
+  return buffer.toString();
+}
+
+String _formatHomeschoolingSrtTime(Duration value) {
+  String two(int number) => number.toString().padLeft(2, '0');
+  String three(int number) => number.toString().padLeft(3, '0');
+  return '${two(value.inHours)}:${two(value.inMinutes.remainder(60))}:'
+      '${two(value.inSeconds.remainder(60))},'
+      '${three(value.inMilliseconds.remainder(1000))}';
 }

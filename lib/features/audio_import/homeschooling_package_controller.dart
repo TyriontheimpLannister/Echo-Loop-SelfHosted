@@ -82,15 +82,54 @@ class HomeschoolingImportController
     }
   }
 
-  Future<void> receiveFromHomeSchooling({
+  Future<HomeschoolingImportState> receiveFromHomeSchooling({
+    required String password,
+    required String contentMode,
+    required String childSlug,
+    int? childId,
+  }) async {
+    state = const HomeschoolingImportRunning();
+    try {
+      final receiver = ref.read(homeSchoolingPackageReceiverServiceProvider);
+      final received = await receiver.receiveLatestPackage(
+        password: password,
+        contentMode: contentMode,
+        childSlug: childSlug,
+        childId: childId,
+      );
+      final result = await HomeschoolingPackageImporter().importPackage(
+        received.package,
+        dao: ref.read(audioItemDaoProvider),
+        childSlug: ref.read(activeProfileProvider).id,
+        audioLibrary: ref.read(audioLibraryProvider.notifier),
+        audioLibraryState: ref.read(audioLibraryProvider),
+        collectionList: ref.read(collectionListProvider.notifier),
+        collectionState: ref.read(collectionListProvider),
+      );
+      state = HomeschoolingImportSuccess(
+        result.added.length,
+        result.duplicates.length,
+        result.failed,
+        received.package.title,
+      );
+    } catch (error) {
+      state = HomeschoolingImportFailure(error.toString());
+    }
+    return state;
+  }
+
+  /// 导入用户在 HomeSchooling 任务列表中明确选择的一项。
+  Future<HomeschoolingImportState> receiveTaskFromHomeSchooling({
+    required int taskId,
     required String password,
     required String contentMode,
     required String childSlug,
   }) async {
     state = const HomeschoolingImportRunning();
     try {
-      final receiver = HomeSchoolingPackageReceiverService();
-      final received = await receiver.receiveLatestPackage(
+      final receiver = ref.read(homeSchoolingPackageReceiverServiceProvider);
+      final received = await receiver.receiveTaskPackage(
+        taskId: taskId,
         password: password,
         contentMode: contentMode,
         childSlug: childSlug,
@@ -113,6 +152,7 @@ class HomeschoolingImportController
     } catch (error) {
       state = HomeschoolingImportFailure(error.toString());
     }
+    return state;
   }
 
   void reset() {
@@ -125,6 +165,11 @@ final homeschoolingImportControllerProvider =
       HomeschoolingImportController,
       HomeschoolingImportState
     >(HomeschoolingImportController.new);
+
+final homeSchoolingPackageReceiverServiceProvider =
+    Provider<HomeSchoolingPackageReceiverService>(
+      (ref) => HomeSchoolingPackageReceiverService(),
+    );
 
 /// 导出服务 provider（单例）。
 final homeschoolingPackageExporterProvider =

@@ -162,32 +162,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => context.push(AppRoutes.profileSelect),
         ),
-        ListTile(
-          leading: _settingsSvgIcon('assets/icon/account-1.svg'),
-          title: Text(l10n.account),
-          subtitle: accountSubtitle == null
-              ? null
-              : Text(
-                  accountSubtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+        if (ref.watch(authConfiguredProvider))
+          ListTile(
+            leading: _settingsSvgIcon('assets/icon/account-1.svg'),
+            title: Text(l10n.account),
+            subtitle: accountSubtitle == null
+                ? null
+                : Text(
+                    accountSubtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isSignedIn
+                      ? l10n.authSignedInStatus
+                      : l10n.authSignedOutStatus,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                isSignedIn ? l10n.authSignedInStatus : l10n.authSignedOutStatus,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              const Icon(Icons.chevron_right),
-            ],
+                const SizedBox(width: AppSpacing.xs),
+                const Icon(Icons.chevron_right),
+              ],
+            ),
+            onTap: () =>
+                context.push(isSignedIn ? AppRoutes.account : AppRoutes.login),
           ),
-          onTap: () =>
-              context.push(isSignedIn ? AppRoutes.account : AppRoutes.login),
-        ),
         // 当前平台未启用订阅（未注入 RC key）时隐藏入口。
         if (ref.watch(subscriptionAvailabilityProvider))
           _buildSubscriptionTile(context, l10n),

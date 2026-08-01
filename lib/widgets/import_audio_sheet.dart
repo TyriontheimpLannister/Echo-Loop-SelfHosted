@@ -1,6 +1,3 @@
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../features/audio_import/audio_import_models.dart';
 import '../features/audio_import/audio_import_provider.dart';
 import '../features/audio_import/homeschooling_package_controller.dart';
+import '../features/audio_import/homeschooling_package_receiver_service.dart';
 import '../features/audio_import/homeschooling_transfer_service.dart';
 import '../features/audio_import/subtitle_pairing.dart';
 import '../features/baidu_netdisk/models/cloud_drive_models.dart';
@@ -50,6 +48,20 @@ enum _ImportStep {
   completed,
 }
 
+enum _HomeSchoolingTaskPhase { importing, success, failure }
+
+class _HomeSchoolingTaskResult {
+  const _HomeSchoolingTaskResult({
+    required this.phase,
+    this.success,
+    this.message,
+  });
+
+  final _HomeSchoolingTaskPhase phase;
+  final HomeschoolingImportSuccess? success;
+  final String? message;
+}
+
 class ImportAudioFlowSheet extends ConsumerStatefulWidget {
   const ImportAudioFlowSheet({super.key, this.collectionId});
 
@@ -67,6 +79,14 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
   AudioImportOutcome _outcome = (added: const [], duplicates: const []);
   bool _baiduConfirming = false;
   bool _homeSchoolingReceiving = false;
+  String? _homeSchoolingError;
+  String? _homeSchoolingPassword;
+  HomeSchoolingChild? _homeSchoolingChild;
+  List<HomeSchoolingTask> _homeSchoolingTasks = const [];
+  final Set<int> _selectedHomeSchoolingTaskIds = {};
+  final Map<int, _HomeSchoolingTaskResult> _homeSchoolingTaskResults = {};
+  // 默认保持一篇文章，同时由导入器沿用原始句子音频的真实边界。
+  String _homeSchoolingContentMode = 'passage';
 
   @override
   void dispose() {
@@ -210,7 +230,6 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
           showCloudDrive: cloudDriveImportEnabled,
           onLocalFile: () => setState(() => _step = _ImportStep.localFile),
           onDirectUrl: () => setState(() => _step = _ImportStep.directUrl),
-          onHomeSchoolingFile: () => _pickAndImportHomeSchoolingPackage(),
           onHomeSchoolingOnline: () {
             setState(() => _step = _ImportStep.onlineReceive);
           },
@@ -248,8 +267,20 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
         _ImportStep.onlineReceive => _HomeSchoolingOnlinePanel(
           key: const ValueKey('homeschooling-online'),
           busy: _homeSchoolingReceiving,
+          errorMessage: _homeSchoolingError,
+          child: _homeSchoolingChild,
+          tasks: _homeSchoolingTasks,
+          selectedTaskIds: _selectedHomeSchoolingTaskIds,
+          taskResults: _homeSchoolingTaskResults,
+          contentMode: _homeSchoolingContentMode,
           onBack: () => setState(() => _step = _ImportStep.chooseSource),
-          onReceive: _receiveHomeSchoolingPackageOnline,
+          onDone: () => Navigator.pop(context),
+          onLoadTasks: _loadHomeSchoolingTasks,
+          onTaskSelectionChanged: _setHomeSchoolingTaskSelected,
+          onContentModeChanged: (value) {
+            setState(() => _homeSchoolingContentMode = value);
+          },
+          onImportSelected: _importSelectedHomeSchoolingTasks,
         ),
         _ImportStep.completed => _CompletedPanel(
           key: const ValueKey('completed'),
@@ -356,127 +387,29 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
     _handleImported((added: [item], duplicates: const []));
   }
 
-  Future<void> _pickAndImportHomeSchoolingPackage() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json'],
-      );
-      if (result == null || result.files.isEmpty) return;
-      final path = result.files.single.path;
-      if (path == null) return;
-      final file = File(path);
-      if (!mounted) return;
-      Navigator.pop(context);
-      final controller = ref.read(
-        homeschoolingImportControllerProvider.notifier,
-      );
-      await controller.importFromFile(file);
-      final state = ref.read(homeschoolingImportControllerProvider);
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.maybeOf(context);
-      if (messenger == null) return;
-      if (state is HomeschoolingImportSuccess) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              '已导入 ${state.addedCount} 项；重复 ${state.duplicateCount} 项；失败 ${state.failedCount} 项。',
-            ),
-          ),
-        );
-      } else if (state is HomeschoolingImportFailure) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('HomeSchooling 包导入失败：${state.message}')),
-        );
-      }
-      controller.reset();
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('打开 HomeSchooling 包失败：$error')));
-    }
-  }
-
   Future<void> _cancelUrlImport() async {
     await ref.read(audioImportControllerProvider.notifier).cancel();
     if (!mounted) return;
     setState(() => _step = _ImportStep.directUrl);
   }
 
-  Future<void> _receiveHomeSchoolingPackageOnline() async {
+  Future<void> _loadHomeSchoolingTasks() async {
     if (!mounted) return;
-    final passwordController = TextEditingController();
-    var contentMode = 'passage';
     final password = await showDialog<String>(
       context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return AlertDialog(
-              title: const Text('在线接收 HomeSchooling 包'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: '家长密码'),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Radio<String>(
-                          value: 'passage',
-                          groupValue: contentMode,
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setModalState(() => contentMode = value);
-                          },
-                        ),
-                      ),
-                      const Expanded(child: Text('整篇短文')),
-                      Expanded(
-                        child: Radio<String>(
-                          value: 'sentences',
-                          groupValue: contentMode,
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setModalState(() => contentMode = value);
-                          },
-                        ),
-                      ),
-                      const Expanded(child: Text('独立句子')),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('取消'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    final password = passwordController.text.trim();
-                    if (password.isNotEmpty) {
-                      Navigator.of(dialogContext).pop(password);
-                    }
-                  },
-                  child: const Text('接收'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      builder: (_) => const _HomeSchoolingReceiveDialog(),
     );
-    passwordController.dispose();
     if (password == null || !mounted) return;
 
+    setState(() {
+      _homeSchoolingReceiving = true;
+      _homeSchoolingError = null;
+      _homeSchoolingTasks = const [];
+      _selectedHomeSchoolingTaskIds.clear();
+      _homeSchoolingTaskResults.clear();
+    });
     try {
-      final transfer = HomeSchoolingTransferService();
+      final transfer = ref.read(homeSchoolingTransferServiceProvider);
       final children = await transfer.loadChildren(password);
       if (!mounted) return;
       final profile = ref.read(activeProfileProvider);
@@ -498,59 +431,101 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
           : await _chooseHomeSchoolingChildForReceive(safeContext, children);
       if (child == null || !context.mounted) return;
       await saveHomeSchoolingChildSlug(prefs, profile, child.slug);
-      setState(() => _step = _ImportStep.onlineReceive);
-      await _receiveWithController(
-        password: password,
-        contentMode: contentMode,
-        childSlug: child.slug,
-      );
+      final tasks = await ref
+          .read(homeSchoolingPackageReceiverServiceProvider)
+          .loadTasks(
+            password: password,
+            childSlug: child.slug,
+            childId: child.id,
+          );
+      if (!mounted) return;
+      setState(() {
+        _step = _ImportStep.onlineReceive;
+        _homeSchoolingPassword = password;
+        _homeSchoolingChild = child;
+        _homeSchoolingTasks = tasks;
+        _homeSchoolingError = tasks.isEmpty ? '当前孩子还没有听写任务。' : null;
+      });
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('读取 HomeSchooling 孩子列表失败：$error')));
-    }
-  }
-
-  Future<void> _receiveWithController({
-    required String password,
-    required String contentMode,
-    required String childSlug,
-  }) async {
-    if (!mounted) return;
-    final controller = ref.read(homeschoolingImportControllerProvider.notifier);
-    setState(() => _homeSchoolingReceiving = true);
-    try {
-      await controller.receiveFromHomeSchooling(
-        password: password,
-        contentMode: contentMode,
-        childSlug: childSlug,
-      );
-      final state = ref.read(homeschoolingImportControllerProvider);
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.maybeOf(context);
-      if (messenger == null) return;
-      if (state is HomeschoolingImportSuccess) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              '已接收 ${state.addedCount} 项；重复 ${state.duplicateCount} 项；失败 ${state.failedCount} 项。',
-            ),
-          ),
-        );
-        setState(() => _step = _ImportStep.completed);
-        _outcome = (added: const [], duplicates: const []);
-      } else if (state is HomeschoolingImportFailure) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('在线接收 HomeSchooling 包失败：${state.message}')),
-        );
-        setState(() => _step = _ImportStep.chooseSource);
-      }
+      setState(() {
+        _homeSchoolingPassword = null;
+        _homeSchoolingChild = null;
+        _homeSchoolingError = '读取 HomeSchooling 任务失败：$error';
+      });
     } finally {
-      controller.reset();
       if (mounted) {
         setState(() => _homeSchoolingReceiving = false);
       }
+    }
+  }
+
+  void _setHomeSchoolingTaskSelected(int taskId, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedHomeSchoolingTaskIds.add(taskId);
+      } else {
+        _selectedHomeSchoolingTaskIds.remove(taskId);
+      }
+    });
+  }
+
+  Future<void> _importSelectedHomeSchoolingTasks() async {
+    final password = _homeSchoolingPassword;
+    final child = _homeSchoolingChild;
+    if (password == null ||
+        child == null ||
+        _selectedHomeSchoolingTaskIds.isEmpty ||
+        _homeSchoolingReceiving) {
+      return;
+    }
+    final selectedTasks = _homeSchoolingTasks
+        .where((task) => _selectedHomeSchoolingTaskIds.contains(task.id))
+        .toList();
+    setState(() {
+      _homeSchoolingReceiving = true;
+      _homeSchoolingError = null;
+      _homeSchoolingTaskResults.clear();
+    });
+    final controller = ref.read(homeschoolingImportControllerProvider.notifier);
+    for (final task in selectedTasks) {
+      if (!mounted) return;
+      setState(() {
+        _homeSchoolingTaskResults[task.id] = const _HomeSchoolingTaskResult(
+          phase: _HomeSchoolingTaskPhase.importing,
+        );
+      });
+      final state = await controller.receiveTaskFromHomeSchooling(
+        taskId: task.id,
+        password: password,
+        contentMode: _homeSchoolingContentMode,
+        childSlug: child.slug,
+      );
+      if (!mounted) return;
+      final taskResult = switch (state) {
+        HomeschoolingImportSuccess() => _HomeSchoolingTaskResult(
+          phase: _HomeSchoolingTaskPhase.success,
+          success: state,
+        ),
+        HomeschoolingImportFailure() => _HomeSchoolingTaskResult(
+          phase: _HomeSchoolingTaskPhase.failure,
+          message: state.message,
+        ),
+        _ => const _HomeSchoolingTaskResult(
+          phase: _HomeSchoolingTaskPhase.failure,
+          message: '导入状态无法识别。',
+        ),
+      };
+      setState(() {
+        _homeSchoolingTaskResults[task.id] = taskResult;
+        if (taskResult.phase == _HomeSchoolingTaskPhase.success) {
+          _selectedHomeSchoolingTaskIds.remove(task.id);
+        }
+      });
+      controller.reset();
+    }
+    if (mounted) {
+      setState(() => _homeSchoolingReceiving = false);
     }
   }
 
@@ -559,6 +534,7 @@ class _ImportAudioFlowSheetState extends ConsumerState<ImportAudioFlowSheet> {
       ref.read(baiduNetdiskImportControllerProvider.notifier).cancel();
       return;
     }
+    if (_step == _ImportStep.onlineReceive) return;
     await _cancelUrlImport();
   }
 }
@@ -741,18 +717,45 @@ class _HomeSchoolingOnlinePanel extends StatelessWidget {
   const _HomeSchoolingOnlinePanel({
     super.key,
     required this.busy,
+    required this.errorMessage,
+    required this.child,
+    required this.tasks,
+    required this.selectedTaskIds,
+    required this.taskResults,
+    required this.contentMode,
     required this.onBack,
-    required this.onReceive,
+    required this.onDone,
+    required this.onLoadTasks,
+    required this.onTaskSelectionChanged,
+    required this.onContentModeChanged,
+    required this.onImportSelected,
   });
 
   final bool busy;
+  final String? errorMessage;
+  final HomeSchoolingChild? child;
+  final List<HomeSchoolingTask> tasks;
+  final Set<int> selectedTaskIds;
+  final Map<int, _HomeSchoolingTaskResult> taskResults;
+  final String contentMode;
   final VoidCallback onBack;
-  final Future<void> Function() onReceive;
+  final VoidCallback onDone;
+  final Future<void> Function() onLoadTasks;
+  final void Function(int taskId, bool selected) onTaskSelectionChanged;
+  final ValueChanged<String> onContentModeChanged;
+  final Future<void> Function() onImportSelected;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final hasTasks = tasks.isNotEmpty;
+    final completedCount = taskResults.values
+        .where((result) => result.phase == _HomeSchoolingTaskPhase.success)
+        .length;
+    final failedCount = taskResults.values
+        .where((result) => result.phase == _HomeSchoolingTaskPhase.failure)
+        .length;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -760,7 +763,7 @@ class _HomeSchoolingOnlinePanel extends StatelessWidget {
         Text('在线接收 HomeSchooling 包', style: theme.textTheme.titleMedium),
         const SizedBox(height: 12),
         Text(
-          '在 Echo Loop 端直接接收家长端发送的听写包，无需拷贝文件。',
+          '输入家长密码后查看当前账号对应孩子的全部听写任务，再选择一个或多个导入。',
           style: theme.textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -770,34 +773,325 @@ class _HomeSchoolingOnlinePanel extends StatelessWidget {
           const LinearProgressIndicator(),
           const SizedBox(height: 10),
           Text(
-            '正在接收，请稍候…',
+            hasTasks ? '正在逐项导入，请稍候…' : '正在读取任务，请稍候…',
             style: theme.textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 12),
         ],
+        if (errorMessage != null) ...[
+          _HomeSchoolingReceiveStatus(
+            icon: Icons.error_outline_rounded,
+            color: colorScheme.error,
+            title: '读取失败',
+            message: errorMessage!,
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (hasTasks) ...[
+          _HomeSchoolingReceiveStatus(
+            icon: Icons.person_rounded,
+            color: colorScheme.primary,
+            title: child?.name ?? '当前孩子',
+            message:
+                '共 ${tasks.length} 个任务，可导入 '
+                '${tasks.where((task) => task.canImport).length} 个。',
+          ),
+          const SizedBox(height: 16),
+          Text('导入形式', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 4),
+          RadioGroup<String>(
+            groupValue: contentMode,
+            onChanged: (value) {
+              if (!busy && value != null) onContentModeChanged(value);
+            },
+            child: const Row(
+              children: [
+                Radio<String>(value: 'passage'),
+                Expanded(child: Text('整篇文章（保留原句边界）')),
+                Radio<String>(value: 'sentences'),
+                Expanded(child: Text('拆成独立音频')),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text('选择任务', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          for (final task in tasks) ...[
+            _HomeSchoolingTaskTile(
+              task: task,
+              selected: selectedTaskIds.contains(task.id),
+              busy: busy,
+              result: taskResults[task.id],
+              onChanged: (selected) =>
+                  onTaskSelectionChanged(task.id, selected),
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (taskResults.isNotEmpty && !busy) ...[
+            const SizedBox(height: 4),
+            _HomeSchoolingReceiveStatus(
+              icon: failedCount == 0
+                  ? Icons.check_circle_rounded
+                  : Icons.info_outline_rounded,
+              color: failedCount == 0 ? colorScheme.primary : colorScheme.error,
+              title: '本次导入完成',
+              message:
+                  '成功 $completedCount 个任务；失败 $failedCount 个任务。'
+                  '${failedCount > 0 ? ' 可保留选择后重试。' : ''}',
+            ),
+            const SizedBox(height: 16),
+          ],
+        ],
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: busy ? null : onReceive,
+            onPressed: busy
+                ? null
+                : hasTasks
+                ? (selectedTaskIds.isEmpty ? null : onImportSelected)
+                : onLoadTasks,
             icon: busy
                 ? const SizedBox(
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.wifi_rounded),
-            label: Text(busy ? '接收中…' : '立即接收'),
+                : Icon(hasTasks ? Icons.download_rounded : Icons.wifi_rounded),
+            label: Text(
+              busy
+                  ? (hasTasks ? '导入中…' : '读取中…')
+                  : hasTasks
+                  ? '导入所选（${selectedTaskIds.length} 个任务）'
+                  : '输入密码并查看任务',
+            ),
           ),
         ),
+        if (hasTasks) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: busy ? null : onLoadTasks,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('重新读取任务'),
+            ),
+          ),
+        ],
+        if (taskResults.isNotEmpty && !busy) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: onDone,
+              icon: const Icon(Icons.check_rounded),
+              label: const Text('完成'),
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         TextButton.icon(
-          onPressed: onBack,
+          onPressed: busy ? null : onBack,
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           label: const Text('返回'),
         ),
       ],
+    );
+  }
+}
+
+class _HomeSchoolingTaskTile extends StatelessWidget {
+  const _HomeSchoolingTaskTile({
+    required this.task,
+    required this.selected,
+    required this.busy,
+    required this.result,
+    required this.onChanged,
+  });
+
+  final HomeSchoolingTask task;
+  final bool selected;
+  final bool busy;
+  final _HomeSchoolingTaskResult? result;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final enabled = task.canImport && !busy;
+    return Material(
+      color: colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: CheckboxListTile(
+        value: selected,
+        onChanged: enabled
+            ? (value) {
+                if (value != null) onChanged(value);
+              }
+            : null,
+        controlAffinity: ListTileControlAffinity.leading,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        title: Text(task.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          _taskDescription(),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: result?.phase == _HomeSchoolingTaskPhase.failure
+                ? colorScheme.error
+                : colorScheme.onSurfaceVariant,
+          ),
+        ),
+        secondary: _resultIcon(colorScheme),
+      ),
+    );
+  }
+
+  String _taskDescription() {
+    final resultText = switch (result?.phase) {
+      _HomeSchoolingTaskPhase.importing => '正在导入',
+      _HomeSchoolingTaskPhase.success =>
+        '已导入 ${result?.success?.addedCount ?? 0} 项；'
+            '重复 ${result?.success?.duplicateCount ?? 0} 项',
+      _HomeSchoolingTaskPhase.failure => '失败：${result?.message ?? '未知错误'}',
+      null => null,
+    };
+    if (resultText != null) return resultText;
+    final date = task.createdAt;
+    final dateText = date == null
+        ? ''
+        : '${date.year}-${date.month.toString().padLeft(2, '0')}-'
+              '${date.day.toString().padLeft(2, '0')} · ';
+    final archiveText = task.isArchived ? ' · 已归档' : '';
+    if (task.canImport) {
+      return '$dateText${task.totalItems} 句$archiveText';
+    }
+    final statusText = switch (task.status) {
+      'pending' => '音频生成中',
+      'failed' => '音频生成失败',
+      _ => '暂不可导入',
+    };
+    return '$dateText$statusText$archiveText';
+  }
+
+  Widget? _resultIcon(ColorScheme colorScheme) {
+    return switch (result?.phase) {
+      _HomeSchoolingTaskPhase.importing => const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+      _HomeSchoolingTaskPhase.success => Icon(
+        Icons.check_circle_rounded,
+        color: colorScheme.primary,
+      ),
+      _HomeSchoolingTaskPhase.failure => Icon(
+        Icons.error_rounded,
+        color: colorScheme.error,
+      ),
+      null =>
+        task.isArchived
+            ? Icon(Icons.archive_outlined, color: colorScheme.onSurfaceVariant)
+            : null,
+    };
+  }
+}
+
+class _HomeSchoolingReceiveDialog extends StatefulWidget {
+  const _HomeSchoolingReceiveDialog();
+
+  @override
+  State<_HomeSchoolingReceiveDialog> createState() =>
+      _HomeSchoolingReceiveDialogState();
+}
+
+class _HomeSchoolingReceiveDialogState
+    extends State<_HomeSchoolingReceiveDialog> {
+  final _passwordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('在线接收 HomeSchooling 包'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _passwordController,
+            obscureText: true,
+            autofocus: true,
+            onSubmitted: (_) => _submit(),
+            decoration: const InputDecoration(labelText: '家长密码'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(onPressed: _submit, child: const Text('查看任务')),
+      ],
+    );
+  }
+
+  void _submit() {
+    final password = _passwordController.text.trim();
+    if (password.isEmpty) return;
+    Navigator.of(context).pop(password);
+  }
+}
+
+class _HomeSchoolingReceiveStatus extends StatelessWidget {
+  const _HomeSchoolingReceiveStatus({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: theme.textTheme.titleSmall),
+                const SizedBox(height: 4),
+                Text(message, style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -808,7 +1102,6 @@ class _ChooseSourcePanel extends StatelessWidget {
     required this.showCloudDrive,
     required this.onLocalFile,
     required this.onDirectUrl,
-    required this.onHomeSchoolingFile,
     required this.onHomeSchoolingOnline,
     required this.onCloudDrive,
   });
@@ -816,7 +1109,6 @@ class _ChooseSourcePanel extends StatelessWidget {
   final bool showCloudDrive;
   final VoidCallback onLocalFile;
   final VoidCallback onDirectUrl;
-  final VoidCallback onHomeSchoolingFile;
   final VoidCallback onHomeSchoolingOnline;
   final VoidCallback onCloudDrive;
 
@@ -852,18 +1144,10 @@ class _ChooseSourcePanel extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _ImportOptionTile(
-          key: const ValueKey('import-option-homeschooling-file'),
-          icon: Icons.school_outlined,
-          title: '从 HomeSchooling 包导入',
-          description: '选择 HomeSchooling 家长代学习机上生成的 .json 包，一键转成听写语料。',
-          onTap: onHomeSchoolingFile,
-        ),
-        const SizedBox(height: 8),
-        _ImportOptionTile(
           key: const ValueKey('import-option-homeschooling-online'),
           icon: Icons.wifi,
           title: '在线接收 HomeSchooling 包',
-          description: '在 Echo Loop 端直接接收家长端发送的听写包，无需拷贝文件。',
+          description: '输入家长密码，选择一个或多个听写任务导入。',
           onTap: onHomeSchoolingOnline,
         ),
       ],

@@ -16,8 +16,8 @@ void main() {
               requestOptions: options,
               statusCode: 200,
               data: [
-                {'slug': 'learner-a', 'name': 'Learner A'},
-                {'slug': 'learner-b', 'name': 'Learner B'},
+                {'id': 1, 'slug': 'learner-a', 'name': 'Learner A'},
+                {'id': 2, 'slug': 'learner-b', 'name': 'Learner B'},
               ],
             ),
           );
@@ -32,6 +32,7 @@ void main() {
     expect(captured.path, '/parent/dictation/api/children');
     expect(captured.headers['X-Parent-Password'], 'parent-password');
     expect(children.map((child) => child.slug), ['learner-a', 'learner-b']);
+    expect(children.map((child) => child.id), [1, 2]);
   });
 
   test('sends the generated package directly to the selected child', () async {

@@ -19,8 +19,6 @@ import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/password_sign_in_screen.dart';
 import '../features/auth/providers/auth_providers.dart';
 import '../providers/profile_provider.dart';
-import '../features/official_collections/screens/discover_collections_screen.dart';
-import '../features/official_collections/screens/official_collection_detail_screen.dart';
 import '../features/podcast/podcast_models.dart';
 import '../features/podcast/screens/podcast_discovery_screen.dart';
 import '../features/podcast/screens/podcast_preview_screen.dart';
@@ -489,22 +487,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/activity-calendar',
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const ActivityCalendarScreen(),
-      ),
-      // 发现官方合集（全屏）
-      GoRoute(
-        path: '/discover',
-        parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const DiscoverCollectionsScreen(),
-        routes: [
-          GoRoute(
-            path: ':remoteId',
-            parentNavigatorKey: rootNavigatorKey,
-            builder: (context, state) {
-              final remoteId = state.pathParameters['remoteId']!;
-              return OfficialCollectionDetailScreen(remoteId: remoteId);
-            },
-          ),
-        ],
       ),
       // Podcast 搜索与订阅统一页（全屏），两个入口共用；单集预览下沉为
       // 本页嵌套子路由，使 URL 自表达完整栈（§7.17）。

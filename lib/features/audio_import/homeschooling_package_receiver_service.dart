@@ -40,6 +40,30 @@ class HomeSchoolingPackageReceiveException implements Exception {
   String toString() => message;
 }
 
+/// HomeSchooling 父端任务列表中的一项。
+class HomeSchoolingTask {
+  const HomeSchoolingTask({
+    required this.id,
+    required this.name,
+    required this.childId,
+    required this.status,
+    required this.totalItems,
+    this.createdAt,
+    this.archivedAt,
+  });
+
+  final int id;
+  final String name;
+  final int? childId;
+  final String status;
+  final int totalItems;
+  final DateTime? createdAt;
+  final DateTime? archivedAt;
+
+  bool get canImport => status == 'done' && totalItems > 0;
+  bool get isArchived => archivedAt != null;
+}
+
 class HomeSchoolingPackageReceiverService {
   HomeSchoolingPackageReceiverService({Dio? dio})
     : _dio =
@@ -86,11 +110,83 @@ class HomeSchoolingPackageReceiverService {
     required String password,
     required String contentMode,
     String? childSlug,
+    int? childId,
   }) async {
-    final taskId = await _pickLatestFinishedTaskId(
-      password,
+    final tasks = await loadTasks(
+      password: password,
+      childSlug: childSlug,
+      childId: childId,
+    );
+    final importableTasks = tasks
+        .where((task) => task.status == 'done')
+        .toList();
+    if (importableTasks.isEmpty) {
+      throw const HomeSchoolingPackageReceiveException('当前孩子还没有已完成的听写任务。');
+    }
+    return receiveTaskPackage(
+      taskId: importableTasks.first.id,
+      password: password,
+      contentMode: contentMode,
       childSlug: childSlug,
     );
+  }
+
+  /// 读取当前孩子的全部任务；未完成任务也返回给 UI，但不可选择导入。
+  Future<List<HomeSchoolingTask>> loadTasks({
+    required String password,
+    String? childSlug,
+    int? childId,
+  }) async {
+    final taskResponse = await _request(
+      () => _dio.get<dynamic>(
+        '/parent/dictation/api/tasks',
+        options: Options(headers: {'X-Parent-Password': password}),
+      ),
+    );
+    if (taskResponse.data is! List) {
+      throw const HomeSchoolingPackageReceiveException(
+        'HomeSchooling 返回的任务列表无法识别。',
+      );
+    }
+    final tasks = <HomeSchoolingTask>[];
+    for (final entry in taskResponse.data as List) {
+      if (entry is! Map<String, dynamic>) continue;
+      final id = (entry['id'] as num?)?.toInt();
+      if (id == null) continue;
+      // HomeSchooling 当前父端任务列表只返回 child_id；slug 仅保留给旧接口兼容。
+      final taskChildId = (entry['child_id'] as num?)?.toInt();
+      if (childId != null) {
+        if (taskChildId != childId) continue;
+      } else if (childSlug != null) {
+        final taskChild =
+            entry['child_slug'] ?? entry['child'] ?? entry['childSlug'];
+        if (taskChild is! String || taskChild != childSlug) continue;
+      }
+      tasks.add(
+        HomeSchoolingTask(
+          id: id,
+          name: _taskName(entry, id),
+          childId: taskChildId,
+          status: entry['status'] is String
+              ? (entry['status'] as String).trim()
+              : 'unknown',
+          totalItems: (entry['total_items'] as num?)?.toInt() ?? 0,
+          createdAt: _parseDate(entry['created_at']),
+          archivedAt: _parseDate(entry['archived_at']),
+        ),
+      );
+    }
+    tasks.sort((a, b) => b.id.compareTo(a.id));
+    return tasks;
+  }
+
+  /// 拉取用户明确选择的单个任务包。
+  Future<HomeSchoolingPackageReceiveResult> receiveTaskPackage({
+    required int taskId,
+    required String password,
+    required String contentMode,
+    String? childSlug,
+  }) async {
     final escapedTaskId = Uri.encodeComponent(taskId.toString());
     final path = _exportPath.replaceAll('{task_id}', escapedTaskId);
     final response = await _request(
@@ -121,40 +217,15 @@ class HomeSchoolingPackageReceiverService {
     return HomeSchoolingPackageReceiveResult(package: package);
   }
 
-  Future<int> _pickLatestFinishedTaskId(
-    String password, {
-    String? childSlug,
-  }) async {
-    final taskResponse = await _request(
-      () => _dio.get<dynamic>(
-        '/parent/dictation/api/tasks',
-        options: Options(headers: {'X-Parent-Password': password}),
-      ),
-    );
-    if (taskResponse.data is! List) {
-      throw const HomeSchoolingPackageReceiveException(
-        'HomeSchooling 返回的任务列表无法识别。',
-      );
-    }
-    final tasks = <Map<String, dynamic>>[];
-    for (final entry in taskResponse.data as List) {
-      if (entry is! Map<String, dynamic> || entry['status'] != 'done') continue;
-      if (childSlug != null) {
-        final taskChild =
-            entry['child_slug'] ?? entry['child'] ?? entry['childSlug'];
-        if (taskChild is! String || taskChild != childSlug) continue;
-      }
-      tasks.add(entry);
-    }
-    tasks.sort(
-      (a, b) => ((b['id'] as num?)?.toInt() ?? 0).compareTo(
-        (a['id'] as num?)?.toInt() ?? 0,
-      ),
-    );
-    if (tasks.isEmpty) {
-      throw const HomeSchoolingPackageReceiveException('当前孩子还没有已完成的听写任务。');
-    }
-    return (tasks.first['id'] as num).toInt();
+  static String _taskName(Map<String, dynamic> entry, int id) {
+    final name = entry['name'];
+    if (name is String && name.trim().isNotEmpty) return name.trim();
+    return '听写任务 $id';
+  }
+
+  static DateTime? _parseDate(Object? value) {
+    if (value is! String || value.trim().isEmpty) return null;
+    return DateTime.tryParse(value.trim());
   }
 
   Future<Response<dynamic>> _request(

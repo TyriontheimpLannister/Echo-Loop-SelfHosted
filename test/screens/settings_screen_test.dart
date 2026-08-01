@@ -60,6 +60,7 @@ void main() {
     PackageInfo? packageInfo,
     // 测试宿主（macOS/无 key）默认不支持订阅，这里默认置 true 以覆盖订阅入口 UI。
     bool subscriptionAvailable = true,
+    bool authConfigured = true,
   }) {
     const recommendedModel = AsrModelInfo(
       id: 'whisper-base-en-int8',
@@ -85,6 +86,7 @@ void main() {
       audioEngineProvider.overrideWith(() => TestAudioEngine()),
       packageInfoProvider.overrideWithValue(packageInfo ?? testPackageInfo),
       appUpdateProvider.overrideWith(() => TestAppUpdate()),
+      authConfiguredProvider.overrideWithValue(authConfigured),
       subscriptionAvailabilityProvider.overrideWithValue(subscriptionAvailable),
       analyticsOverride(),
     ];
@@ -303,6 +305,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, -600));
+        await tester.pumpAndSettle();
         expect(find.text('About'), findsOneWidget);
         expect(find.text('Terms of Service'), findsOneWidget);
         expect(find.text('Privacy Policy'), findsOneWidget);
@@ -324,6 +328,11 @@ void main() {
           );
           await tester.pumpAndSettle();
 
+          await tester.drag(
+            find.byType(Scrollable).first,
+            const Offset(0, -600),
+          );
+          await tester.pumpAndSettle();
           expect(find.text('Rate Us'), findsOneWidget);
         } finally {
           debugDefaultTargetPlatformOverride = null;
@@ -377,6 +386,19 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('user@example.com'), findsOneWidget);
+      });
+
+      testWidgets('认证未配置时隐藏官方账号入口', (tester) async {
+        await tester.pumpWidget(
+          createTestScreen(
+            const SettingsScreen(),
+            overrides: buildOverrides(authConfigured: false),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('学习者'), findsOneWidget);
+        expect(findSvgAsset('assets/icon/account-1.svg'), findsNothing);
       });
 
       testWidgets('Apple 登录在账号入口显示 Apple 登录方式', (tester) async {

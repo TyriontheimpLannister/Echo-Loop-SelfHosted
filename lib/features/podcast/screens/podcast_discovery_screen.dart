@@ -1,7 +1,7 @@
 /// Podcast 搜索与订阅统一页（全屏）。
 ///
-/// 「发现精选合集」与「创建合集 → 订阅 Podcast」两个入口收敛到本页：
-/// - 搜索框为空 → 展示精选播客（[discoverPodcastsProvider]）。
+/// 「创建合集 → 订阅 Podcast」进入本页：
+/// - 搜索框为空 → 提示输入关键词或链接。
 /// - 输入关键词 → Apple iTunes Search（[podcastSearchResultsProvider]，350ms 防抖）。
 /// - 粘贴 http/https 链接 → 解析该链接对应的播客并显示为可点 item（[podcastPreviewProvider]），
 ///   **不直接订阅**，点「+」才订阅。
@@ -23,8 +23,6 @@ import '../../../router/app_router.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/common/form_input_style.dart';
 import '../../auth/sign_in_required_dialog.dart';
-import '../../official_collections/data/trigger_official_sync.dart';
-import '../../official_collections/providers/discover_podcasts_provider.dart';
 import '../podcast_models.dart';
 import '../podcast_preview_provider.dart';
 import '../podcast_repository.dart';
@@ -46,9 +44,6 @@ class _PodcastDiscoveryScreenState
   /// 防抖后的查询词（已 trim）；驱动搜索/精选/链接模式切换。
   String _query = '';
   Timer? _debounce;
-
-  /// 精选 catalog 未初始化时惰性触发一次同步，避免重复触发。
-  bool _syncTriggered = false;
 
   /// 正在订阅中的列表项标识集合（CatalogPodcast.id / PodcastSearchResult.id /
   /// 链接模式的 feedUrl），驱动对应 tile 的 loading 态，防竞态。
@@ -133,7 +128,7 @@ class _PodcastDiscoveryScreenState
                 child: link != null
                     ? _buildLinkMode(l10n, link.toString())
                     : _query.isEmpty
-                    ? _buildFeatured(l10n)
+                    ? _PodcastListMessage(message: l10n.podcastSearchHint)
                     : _buildSearch(l10n, _query),
               ),
             ],
@@ -181,58 +176,6 @@ class _PodcastDiscoveryScreenState
               },
             ),
           ],
-        );
-      },
-    );
-  }
-
-  /// 精选播客列表：null=未初始化(转圈并触发同步)，空=空态，否则列表。
-  Widget _buildFeatured(AppLocalizations l10n) {
-    final podcasts = ref.watch(discoverPodcastsProvider);
-    if (podcasts == null) {
-      if (!_syncTriggered) {
-        _syncTriggered = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) triggerOfficialSync(ref);
-        });
-      }
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (podcasts.isEmpty) {
-      return _PodcastListMessage(message: l10n.discoverPodcastEmpty);
-    }
-    final subscribed = _subscribedByFeed();
-    return ListView.builder(
-      padding: EdgeInsets.zero,
-      itemCount: podcasts.length,
-      itemBuilder: (context, index) {
-        final podcast = podcasts[index];
-        final local = subscribed[podcast.rssUrl];
-        return PodcastSubscribeTile(
-          imageUrl: podcast.imageUrl,
-          title: podcast.title,
-          subtitle: podcast.description,
-          subscribed: local != null,
-          subscribing: _subscribingIds.contains(podcast.id),
-          onOpen: () => _openPreview(
-            PodcastPreviewArg(
-              title: podcast.title,
-              imageUrl: podcast.imageUrl,
-              description: podcast.description,
-              feedUrl: podcast.rssUrl,
-              applePodcastUrl: podcast.applePodcastUrl,
-            ),
-          ),
-          onSubscribe: () => _subscribe(
-            inputUrl: podcast.applePodcastUrl.trim().isNotEmpty
-                ? podcast.applePodcastUrl
-                : podcast.subscriptionInputUrl,
-            id: podcast.id,
-            knownFeedUrl: podcast.rssUrl,
-          ),
-          onGoLearn: () {
-            if (local != null) _goLearn(local.id);
-          },
         );
       },
     );

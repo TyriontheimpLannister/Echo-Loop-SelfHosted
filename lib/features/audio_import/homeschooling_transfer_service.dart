@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'homeschooling_package.dart';
 
@@ -14,10 +15,11 @@ const echoLoopApiBaseUrl = String.fromEnvironment(
 
 /// HomeSchooling 中可接收听写任务的孩子。
 class HomeSchoolingChild {
-  const HomeSchoolingChild({required this.slug, required this.name});
+  const HomeSchoolingChild({required this.slug, required this.name, this.id});
 
   final String slug;
   final String name;
+  final int? id;
 }
 
 /// HomeSchooling 成功导入听写包后的摘要。
@@ -79,7 +81,13 @@ class HomeSchoolingTransferService {
           slug.trim().isNotEmpty &&
           name is String &&
           name.trim().isNotEmpty) {
-        children.add(HomeSchoolingChild(slug: slug.trim(), name: name.trim()));
+        children.add(
+          HomeSchoolingChild(
+            slug: slug.trim(),
+            name: name.trim(),
+            id: (entry['id'] as num?)?.toInt(),
+          ),
+        );
       }
     }
     if (children.isEmpty) {
@@ -156,3 +164,8 @@ class HomeSchoolingTransferService {
     }
   }
 }
+
+final homeSchoolingTransferServiceProvider =
+    Provider<HomeSchoolingTransferService>(
+      (ref) => HomeSchoolingTransferService(),
+    );
