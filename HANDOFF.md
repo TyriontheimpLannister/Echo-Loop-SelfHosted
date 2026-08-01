@@ -43,8 +43,9 @@ Do not modify:
 
 ## Next Steps
 
-1. 获得发布授权后上传 1.0.43；删除受影响的旧导入材料并重新导入验收原句边界。
-2. 用户确认后刷新 Graphify、提交并推送。
+1. 在 HONOR PAD 接受 1.0.43 更新，验证旧导入的"奇怪切句"材料：删除该条后
+   从 HomeSchooling 重新导入一次，确认精听/盲听等页面不再重新切句。
+2. 用户确认后刷新 Graphify、提交并推送源码。
 3. 进一步大幅瘦身前，先决定是否删除约 23.6 MiB 的 Android 离线 ASR native 库。
 
 ## Verification
@@ -89,3 +90,10 @@ Do not modify:
 - 2026-07-31：修复 API 地址注入并发布 1.0.39；Graphify 刷新。
 - 2026-07-31：确认旧 APK 的 `localhost:3000` 是更新失败根因。
 - 2026-07-29：发布双账号/HomeSchooling 映射 1.0.38。
+- 1.0.43（versionCode 86）候选包已本地构建，尚未发布；HomeSchooling
+  整篇导入现按实际条目数逐段读取真实音频时长，合成一个音频并保留全部原句边界。
+- 1.0.43（versionCode 86）已发布到
+  `http://192.168.123.187:8000/updates/app-dev-release-1.0.43.apk`，
+  SHA-256 `B8EF350A4C422F50E02939ACA24DD1694807536EBD5F5A27A2E31D9FC27E8987`，
+  大小 99,824,388 B；远端下载字节数和 SHA-256 与本地一致；`version.json`
+  release note UTF-8 正常。详见 `docs/handoffs/2026-08-01-passage-boundaries.md`。
