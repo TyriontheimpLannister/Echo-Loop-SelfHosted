@@ -13,7 +13,7 @@ load_dotenv()
 # 默认用 Sensenova 商汤兼容 OpenAI 端点；本项目生产已配到 `token.sensenova.cn`。
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://token.sensenova.cn/v1")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_MODEL = os.getenv("LLM_MODEL", "sensenova-6.7-flash-lite")
+LLM_MODEL = os.getenv("LLM_MODEL", "sensenova-6.8-flash-lite")
 
 # LLM 请求超时（秒）与自动重试次数。
 # 无显式超时时，个别请求（如意群 fine 粒度）遇到连接停滞会一直挂起，
@@ -23,7 +23,7 @@ LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "30"))
 LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "2"))
 
 # 关闭「思考型」模型的推理模式（默认开启关闭）。
-# sensenova-6.7-flash-lite 等 reasoning 模型会把大段思考写进 reasoning 字段，
+# sensenova-6.8-flash-lite 等 reasoning 模型会把大段思考写进 reasoning 字段，
 # 对意群切分这类任务思考尤其冗长，会耗尽输出 token 预算导致正式 content 为空、
 # 请求长时间挂起甚至超时。关闭思考后直接产出 JSON（意群实测 60s+ → <1s）。
 # 若换用不支持该参数的 provider（如 OpenAI/DeepSeek），设为 false 以免报错。
