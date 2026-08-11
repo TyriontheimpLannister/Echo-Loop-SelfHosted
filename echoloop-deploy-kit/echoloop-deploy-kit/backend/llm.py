@@ -1,6 +1,6 @@
 """LLM 调用封装（OpenAI 兼容）。
 
-DeepSeek / 通义 / 智谱 / OpenAI 等都兼容这套接口，只需改 config 里的
+Sensenova / Groq 等 OpenAI 兼容端点都可用，只需改 config 里的
 LLM_BASE_URL 与 LLM_MODEL。
 """
 import json

@@ -40,7 +40,7 @@ pip install -r requirements.txt
 
 # ③ 配置（复制模板后填入你的 LLM / 转录 Key）
 cp .env.example .env
-#   编辑 .env：至少填 LLM_API_KEY（翻译/解析/意群/词典必需）
+#   编辑 .env：至少填 LLM_API_KEY（翻译/解析/意群/词典必需）；本项目生产使用 Sensenova
 #   转录若要 AI 字幕，还需 OPENAI_API_KEY
 
 # ④ 启动（调试）
@@ -82,12 +82,12 @@ sudo systemctl enable --now echoloop-ai
 
 ## 4. 转录引擎说明
 
-- **openai（默认）**：调用 OpenAI Whisper API，返回句子级 + 词级时间戳，
+- **openai（默认）**：调用 OpenAI 兼容 Whisper API，返回句子级 + 词级时间戳，
   质量好、实现简单。按音频时长计费，几分钟的音频几分钱。
 - **local**：本地 `faster-whisper` 推理，完全免费，但需在 `transcribe.py` 接入
   并下载模型；j4125 这类低功耗 CPU 上一段 5 分钟音频可能要数分钟。
 
-若暂不配置 `OPENAI_API_KEY`，转录功能不可用，但翻译/解析/意群/词典均正常。
+若暂不配置 `OPENAI_API_KEY`，转录功能不可用，但翻译/解析/意群/词典仍可用；本项目生产依赖 Sensenova 提供 LLM 能力，转录依赖 Groq 兼容端点。
 
 ---
 

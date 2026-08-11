@@ -28,7 +28,7 @@ echoloop-deploy-kit/
 ├── README.md                 ← 给用户的交付说明（可选读）
 ├── backend/                 ← AI 后端，部署到工控机
 │   ├── main.py              # FastAPI 主程序（10 个接口）
-│   ├── llm.py              # LLM 调用（OpenAI 兼容，默认 DeepSeek）
+│   ├── llm.py              # LLM 调用（OpenAI 兼容，默认 Sensenova）
 │   ├── prompts.py          # 各功能提示词（字段严格对齐客户端）
 │   ├── dictionary.py       # 词典 NDJSON 流式协议
 │   ├── transcribe.py       # 转录引擎（openai / local 可切换）
@@ -48,7 +48,7 @@ echoloop-deploy-kit/
 ## 2. 执行前：先向用户确认这些（缺一不可，不要猜）
 
 1. **工控机的局域网 IP**（如 `192.168.1.50`）？你（agent）能否从当前机器 `ssh` 上去？
-2. **DeepSeek API Key**（翻译/解析/意群/词典必需，极便宜）。
+2. **Sensenova API Key**（翻译/解析/意群/词典必需，极便宜）。
 3. 是否需要 **AI 转录字幕**？需要则还要 **OpenAI API Key**（按音频时长计费）。
 4. **编译 APK 的机器在哪**？你（agent）所在机器是否已装 **Flutter 3.9.2+ 和 Android SDK**？
    （没有则告诉用户在哪台装，或你帮装。）
@@ -80,7 +80,7 @@ pip install -r requirements.txt
 
 # 4. 配置密钥
 cp .env.example .env
-#   编辑 .env：至少填 LLM_API_KEY=sk-你的deepseek-key
+#   编辑 .env：至少填 LLM_API_KEY=sk-你的Sensenova或Groq兼容端点Key
 #   需要转录则填 OPENAI_API_KEY=sk-你的openai-key
 
 # 5. 无 Key 自检（务必跑，验证接口契约正确）
@@ -161,7 +161,7 @@ flutter build apk --dart-define-from-file=.dev.env
 ## 5. 完成后
 
 - 告诉用户：App 已装到学习机、后端在工控机常驻、孩子打开即可用全部功能。
-- 提醒成本：DeepSeek 日常使用每月约 **¥1–5**；转录（OpenAI Whisper）按需，几分钟音频约几分钱；
+- 提醒成本：Sensenova 做 LLM、Groq 做转录；按实际供应商口径估算成本
   工控机电费约 ¥1–2/月。
 - 合规提醒：仅个人自用、不分发、不上架，AGPL-3.0 无额外义务；若日后要分享他人或上架，
   需按 AGPL 开源你的衍生代码（协议传染性）。
@@ -170,7 +170,7 @@ flutter build apk --dart-define-from-file=.dev.env
 
 ## 6. 你的边界（做不到的，明确告诉用户）
 
-- 你**无法替用户注册** DeepSeek / OpenAI 的 API Key → 向用户要。
+- 你**无法替用户注册** Sensenova / Groq 的 API Key → 向用户要。
 - 编译 APK **需要 Flutter + Android SDK 环境** → 若你所在机器没有，告知用户在哪台装，或你帮装。
 - **只改 `apply_unlock.py` 指定的 4 处**，不要改动官方仓库其它代码；不要改动 `backend/` 已验证的代码。
 - 若某步报错且超出上述范围（如 Flutter 环境异常、特殊网络），把错误日志带给用户，不要硬猜。

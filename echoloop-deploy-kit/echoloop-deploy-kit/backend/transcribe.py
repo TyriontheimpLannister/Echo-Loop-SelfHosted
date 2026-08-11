@@ -1,7 +1,7 @@
 """转录引擎 + 任务管理。
 
-默认引擎 openai：调用 OpenAI 兼容 Whisper API（verbose_json + 词级时间戳）。
-转录模型名由 config.TRANSCRIBE_MODEL 控制（默认 whisper-1；Groq 等可设为 whisper-large-v3）。
+默认引擎 openai：调用 OpenAI 兼容 Whisper API；本项目生产使用 Groq 兼容端点（verbose_json + 词级时间戳）。
+转录模型名由 config.TRANSCRIBE_MODEL 控制；本项目生产用 whisper-large-v3，OpenAI 官方直连可改回 whisper-1。
 注意：本地 faster-whisper 依赖 CTranslate2，需 CPU 支持 AVX2；J4125 这类低功耗机器
 无 AVX2，本地引擎不可用，故默认走云端兼容端点。
 """

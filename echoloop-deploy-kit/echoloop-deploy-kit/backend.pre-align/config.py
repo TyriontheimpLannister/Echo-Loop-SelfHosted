@@ -10,10 +10,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── LLM（翻译 / 解析 / 意群 / 词典）──
-# 默认用 DeepSeek（国内直连、便宜）。也可换通义、智谱、OpenAI 等 OpenAI 兼容端点。
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1")
+# 默认用 Sensenova 商汤兼容 OpenAI 端点；本项目生产已配到 `token.sensenova.cn`。
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://token.sensenova.cn/v1")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
+LLM_MODEL = os.getenv("LLM_MODEL", "sensenova-6.7-flash-lite")
 
 # LLM 请求超时（秒）与自动重试次数。
 # 无显式超时时，个别请求（如意群 fine 粒度）遇到连接停滞会一直挂起，
@@ -33,13 +33,13 @@ LLM_DISABLE_THINKING = os.getenv("LLM_DISABLE_THINKING", "true").lower() in ("1"
 TARGET_LANGUAGE = os.getenv("TARGET_LANGUAGE", "zh-CN")
 
 # ── 转录引擎 ──
-# openai  : 调用 OpenAI Whisper API（需 OPENAI_API_KEY），质量好、省心。
+# openai  : 调用 OpenAI 兼容 Whisper API（需 OPENAI_API_KEY），质量好、省心。
 # local   : 本地 faster-whisper（免费，但需额外安装依赖 + 下载模型，j4125 较慢）。
 TRANSCRIBE_ENGINE = os.getenv("TRANSCRIBE_ENGINE", "openai")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-# 转录模型名（默认 OpenAI whisper-1；换 Groq 等兼容端点时设为 whisper-large-v3 等）
-TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "whisper-1")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1")
+# 转录模型名（本项目生产用 Groq 兼容端点，默认 `whisper-large-v3`；OpenAI 官方直连可改回 `whisper-1`。）
+TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "whisper-large-v3")
 
 # ── 服务 ──
 HOST = os.getenv("HOST", "0.0.0.0")

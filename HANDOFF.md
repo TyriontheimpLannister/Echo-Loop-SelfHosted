@@ -1,6 +1,6 @@
 # Echo Loop Handoff
 
-> Updated: 2026-08-11 23:20
+> Updated: 2026-08-12 00:45
 > Owner: Codex
 > Status: READY_FOR_REVIEW
 
@@ -28,7 +28,7 @@
 - 1.0.44 真机反馈右上角图标难以发现；现已在解析结果下方加入显式“问 AI”按钮，
   并发布 1.0.45（versionCode 88）。
 - `echoloop-deploy-kit/` 已纳入仓库备份；真实 `.env` 不进 Git，制品/上传/包数据也
-  已加入 `.gitignore`。后端解析 prompt 已收敛到更聚焦句内证据和教学输出的保守优化版。
+  已加入 `.gitignore`。后端默认配置已对齐生产实际运行：LLM 使用 Sensenova 	oken.sensenova.cn / sensenova-6.7-flash-lite，转录使用 Groq 兼容端点 / whisper-large-v3；解析 prompt 仍为聚焦句内证据的保守优化版。
 
 ## Scope
 
@@ -96,6 +96,7 @@ Do not modify:
 
 ## Recent History
 
+- 2026-08-12：已通过 SSH 核清生产用户为 ianwangcn，并读取生产 .env 完成本地代码与文档对齐；生产 LLM 为 Sensenova，转录为 Groq。
 - 2026-08-01：两台学习机确认“问 AI”；希沃待用已标记难句验证跟读录音链路。
 - 2026-08-11：生产环境与 `fork/main` 对齐完成；`echoloop-deploy-kit/` 纳入仓库，
   真实 `.env` 和 APK/上传/包数据已排除，后端 `ANALYZE_PROMPT` 收敛为保守优化版。
@@ -113,3 +114,13 @@ Do not modify:
   SHA-256 `B8EF350A4C422F50E02939ACA24DD1694807536EBD5F5A27A2E31D9FC27E8987`，
   大小 99,824,388 B；远端下载字节数和 SHA-256 与本地一致；`version.json`
   release note UTF-8 正常。详见 `docs/handoffs/2026-08-01-passage-boundaries.md`。
+
+## Deployment SSH Diagnosis
+- 生产机器登录用户：`ianwangcn@192.168.123.187`。
+- 本地私钥：`C:\Users\ian\.ssh\echoloop_agent_ed25519`
+- 服务端已授权公钥：`~/.ssh/authorized_keys` 第 2 行是 `echoloop-deploy-agent`
+- 实测可用登录方式：密钥认证
+  - 测试命令：`ssh -o BatchMode=yes -i "C:\Users\ian\.ssh\echoloop_agent_ed25519" ianwangcn@192.168.123.187 hostname; whoami; date "+%F %T %Z"`
+  - 结果：登录成功，返回 `ubuntuserverian`、`ianwangcn`
+- 服务端 SSH 配置现状：配置中存在 `PubkeyAuthentication` / `PasswordAuthentication` 相关项；以实测密钥登录成功为准。
+- 诊断结论：后续优先按公钥通道诊断，优先检查密钥文件权限、`authorized_keys` 权限和 `sshd` 生效配置，而不是默认改走密码登录。
