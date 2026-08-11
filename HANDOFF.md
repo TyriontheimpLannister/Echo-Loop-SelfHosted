@@ -1,6 +1,6 @@
 # Echo Loop Handoff
 
-> Updated: 2026-08-01 23:36
+> Updated: 2026-08-11 23:20
 > Owner: Codex
 > Status: READY_FOR_REVIEW
 
@@ -27,6 +27,8 @@
 - 句子级 AI 追问已部署：聊天空 session 使用 `local` token；生产后端真实契约 5/5。
 - 1.0.44 真机反馈右上角图标难以发现；现已在解析结果下方加入显式“问 AI”按钮，
   并发布 1.0.45（versionCode 88）。
+- `echoloop-deploy-kit/` 已纳入仓库备份；真实 `.env` 不进 Git，制品/上传/包数据也
+  已加入 `.gitignore`。后端解析 prompt 已收敛到更聚焦句内证据和教学输出的保守优化版。
 
 ## Scope
 
@@ -35,6 +37,13 @@ Allowed paths:
 - HomeSchooling：`lib/features/audio_import/`、`lib/widgets/import_audio_sheet.dart`
 - 发布：`pubspec.yaml`、`android/app/build.gradle.kts`、`../scripts/publish-apk.ps1`
 - 图谱：`graphify-out/`
+- 部署包代码：`echoloop-deploy-kit/echoloop-deploy-kit/`
+
+Do not commit:
+- `echoloop-deploy-kit/echoloop-deploy-kit/backend.from-prod/.env`
+- `echoloop-deploy-kit/echoloop-deploy-kit/*/updates/`
+- `echoloop-deploy-kit/echoloop-deploy-kit/*/uploads/`
+- `echoloop-deploy-kit/echoloop-deploy-kit/*/homeschooling_packages/`
 
 Do not modify:
 - `CLAUDE.md`、`.claude/` 和上游无关文件
@@ -43,7 +52,8 @@ Do not modify:
 ## Next Steps
 
 1. 希沃用同一材料标记至少 1 个难句，确认后续“难句跟读”触发模型下载和录音。
-2. 用户确认后刷新 Graphify、提交并推送源码。
+2. 生产机回读优化后解析 prompt，抽样确认解析输出更聚焦本句证据。
+3. 视需要继续收紧 deploy-kit 的本地/远端备份策略。
 
 ## Verification
 
@@ -70,6 +80,8 @@ Do not modify:
 - Passed: `app-dev-release-1.0.45.apk` / 100,873,252 B / SHA-256
   `B5085089AC77F87C41AA51C673EFA0BBA59DD01571AA13174515075F2D91ED2B`；
   包元数据为 1.0.45/88，远端与回下载一致。
+- Passed: 生产 Git 已对齐 `fork/main`；`echoloop-deploy-kit/` 已纳入仓库，真实 `.env`
+  和制品/上传目录已忽略。
 
 ## Quick Index
 
@@ -80,10 +92,13 @@ Do not modify:
 | 句子 AI 追问 | `docs/handoffs/2026-08-01-echoloop_sentence_chat_handoff.md` |
 | 发布 | `../scripts/publish-apk.ps1` |
 | 图谱 | `graphify-out/` |
+| 后端提示词 | `echoloop-deploy-kit/echoloop-deploy-kit/backend.from-prod/prompts.py` |
 
 ## Recent History
 
 - 2026-08-01：两台学习机确认“问 AI”；希沃待用已标记难句验证跟读录音链路。
+- 2026-08-11：生产环境与 `fork/main` 对齐完成；`echoloop-deploy-kit/` 纳入仓库，
+  真实 `.env` 和 APK/上传/包数据已排除，后端 `ANALYZE_PROMPT` 收敛为保守优化版。
 - 2026-07-31：发布 1.0.42，加入 HomeSchooling 任务列表多选和逐项导入反馈。
 - 2026-07-31：发布 1.0.41，修复 HomeSchooling 在线拉取孩子筛选与无即时反馈。
 - 2026-07-31：在线接收改为任务列表多选；移除可见的旧 JSON 文件包入口。
