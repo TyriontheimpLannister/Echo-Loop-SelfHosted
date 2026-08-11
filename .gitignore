@@ -58,3 +58,4 @@ METHOD.md
 
 # Test artifacts
 test-results.json
+echoloop-deploy-kit/echoloop-deploy-kit/backend.from-prod/.env

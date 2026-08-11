@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 2,
+  "latestVersion": "1.0.45",
+  "minimumVersion": "1.0.0",
+  "releaseNotes": {
+    "zh": "Echo Loop 更新 1.0.45",
+    "en": "Echo Loop update 1.0.45"
+  },
+  "downloadUrl": {},
+  "platforms": {
+    "android": {
+      "apk": {
+        "latestVersion": "1.0.45",
+        "minimumVersion": "1.0.0",
+        "downloadUrl": "http://192.168.123.187:8000/updates/app-dev-release-1.0.45.apk"
+      }
+    }
+  }
+}
