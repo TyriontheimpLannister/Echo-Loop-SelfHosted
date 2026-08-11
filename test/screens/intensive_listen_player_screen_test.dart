@@ -328,6 +328,14 @@ void main() {
       expect(find.byIcon(Icons.tune), findsOneWidget);
     });
 
+    testWidgets('AppBar 显示当前句 AI 追问入口', (tester) async {
+      await tester.pumpWidget(createTestWidget());
+      await tester.pumpAndSettle();
+
+      // 逐句精听进入的是当前句辅导，不受已移除的远程轮询或旧缓存影响。
+      expect(find.byTooltip('Ask AI'), findsOneWidget);
+    });
+
     testWidgets('显示进度文本', (tester) async {
       await tester.pumpWidget(
         createTestWidget(

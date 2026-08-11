@@ -44,13 +44,14 @@ void main() {
   Stream<ChatTextFrame> stream({
     Map<String, Object?> context = const {'sentence': 'The fox'},
     String? targetLanguage = 'zh-CN',
+    String accessToken = 'access-token',
   }) => client.streamChat(
     endpoint: endpoint,
     history: history(),
     context: context,
     followUpInstruction: 'Answer based on the quote.',
     targetLanguage: targetLanguage,
-    accessToken: 'access-token',
+    accessToken: accessToken,
   );
 
   test('200 正常流：帧序列正确（累计全文 + done）', () async {
@@ -115,6 +116,28 @@ void main() {
         cancelToken: any(named: 'cancelToken'),
       ),
     ).called(1);
+  });
+
+  test('空 token → Authorization 使用 Bearer local', () async {
+    when(
+      () => mockDio.post<ResponseBody>(
+        endpoint,
+        data: any(named: 'data'),
+        options: any(
+          named: 'options',
+          that: isA<Options>().having(
+            (o) => o.headers?['Authorization'],
+            'Authorization',
+            'Bearer local',
+          ),
+        ),
+        cancelToken: any(named: 'cancelToken'),
+      ),
+    ).thenAnswer(
+      (_) async => ndjsonResponse('${jsonEncode({'done': true})}\n'),
+    );
+
+    await stream(accessToken: '').toList();
   });
 
   test('空 context / 无 targetLanguage 时请求体省略该字段', () async {

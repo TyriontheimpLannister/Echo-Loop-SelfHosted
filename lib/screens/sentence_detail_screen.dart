@@ -15,6 +15,7 @@ import '../analytics/audio_event_params.dart';
 import '../analytics/models/event_names.dart';
 import '../features/usage/usage_event.dart';
 import '../features/usage/usage_providers.dart';
+import '../features/chatbot/widgets/sentence_chat_button.dart';
 import '../database/providers.dart';
 import '../l10n/app_localizations.dart';
 import '../models/audio_item.dart' as model;
@@ -266,7 +267,11 @@ class _SentenceDetailScreenState extends ConsumerState<SentenceDetailScreen> {
         '${_formatTime(args.startTimeMs)} - ${_formatTime(args.endTimeMs)}';
 
     return Scaffold(
-      appBar: AppBar(title: Text(args.audioName), centerTitle: true),
+      appBar: AppBar(
+        title: Text(args.audioName),
+        centerTitle: true,
+        actions: [SentenceChatButton(sentenceText: args.sentenceText)],
+      ),
       // 词典面板宿主：面板内嵌 body、非 modal（显示期间正文可继续点词）。
       // 页面自身无 PopScope，由宿主代管返回键（面板开着时先关面板）。
       body: DictionaryPanelHost(

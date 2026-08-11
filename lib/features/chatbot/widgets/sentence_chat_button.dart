@@ -5,23 +5,19 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../l10n/app_localizations.dart';
-import '../../remote_config/remote_config.dart';
-import '../../remote_config/remote_config_providers.dart';
 import '../chatbot_flags.dart';
 import '../chatbot_sheet.dart';
 import '../models/chatbot_config.dart';
 
-/// AI 聊天入口显示规则：编译期开关负责硬停，远程开关负责运行期全球隐藏。
-bool shouldShowAiChatAssistantEntry({
-  required bool chatbotEnabled,
-  required bool remoteEnabled,
-}) {
-  return chatbotEnabled && remoteEnabled;
-}
+/// AI 聊天入口显示规则：仅保留编译期开关的硬停能力。
+///
+/// 自托管版已不再轮询官方 remote config；继续依赖旧缓存可能让已部署的
+/// 局域网聊天入口被永久隐藏。因此句子级辅导入口不接受远程配置控制。
+bool shouldShowAiChatAssistantEntry({required bool chatbotEnabled}) =>
+    chatbotEnabled;
 
 /// 构造句子级聊天配置；AppBar 与文本选区入口必须复用同一会话身份。
 ChatbotConfig sentenceChatbotConfig(BuildContext context, String sentenceText) {
@@ -55,7 +51,7 @@ Future<void> showSentenceChatbotSheet({
 /// 开关关闭或 [sentenceText] 为空（句子未就绪）时自隐藏（渲染空 widget），
 /// 调用方无需判空。点击时先执行 [onBeforeOpen]（任务页用来暂停自动推进，
 /// 语义同各页设置按钮），再以 bottom sheet 打开 chatbot。
-class SentenceChatButton extends ConsumerWidget {
+class SentenceChatButton extends StatelessWidget {
   /// 当前句子文本；会话按句子内容归属（相同句子跨页面复用同一会话）。
   final String sentenceText;
 
@@ -69,13 +65,9 @@ class SentenceChatButton extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // 发布开关：编译期开关保留硬停能力，remote config 支持全球动态隐藏入口。
+  Widget build(BuildContext context) {
     final show = shouldShowAiChatAssistantEntry(
       chatbotEnabled: kChatbotEnabled,
-      remoteEnabled: ref.watch(
-        remoteFeatureEnabledProvider(RemoteFeature.aiChatAssistant),
-      ),
     );
     if (!show || sentenceText.isEmpty) return const SizedBox.shrink();
 
@@ -98,6 +90,42 @@ class SentenceChatButton extends ConsumerWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// 解析结果下方的显式追问入口。
+///
+/// 与 AppBar 图标复用同一个句子会话，但使用带文字的按钮，避免用户看完解析后
+/// 还需要猜测右上角图标的用途。
+class SentenceChatFollowUpButton extends StatelessWidget {
+  /// 当前解析对应的完整句子。
+  final String sentenceText;
+
+  /// 打开聊天前暂停学习任务自动推进。
+  final VoidCallback? onBeforeOpen;
+
+  const SentenceChatFollowUpButton({
+    super.key,
+    required this.sentenceText,
+    this.onBeforeOpen,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final show = shouldShowAiChatAssistantEntry(
+      chatbotEnabled: kChatbotEnabled,
+    );
+    if (!show || sentenceText.isEmpty) return const SizedBox.shrink();
+
+    return FilledButton.tonalIcon(
+      key: const ValueKey('sentence-chat-follow-up'),
+      icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+      label: Text(AppLocalizations.of(context)!.chatOpenTooltip),
+      onPressed: () {
+        onBeforeOpen?.call();
+        showSentenceChatbotSheet(context: context, sentenceText: sentenceText);
+      },
     );
   }
 }

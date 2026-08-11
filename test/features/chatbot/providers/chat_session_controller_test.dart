@@ -16,8 +16,8 @@ import 'package:echo_loop/features/chatbot/state/chat_session_state.dart';
 import 'package:echo_loop/features/subscription/models/entitlement.dart';
 import 'package:echo_loop/features/subscription/models/premium_feature.dart';
 import 'package:echo_loop/features/subscription/providers/ai_trial_usage_provider.dart';
+import 'package:echo_loop/features/subscription/providers/feature_access_provider.dart';
 import 'package:echo_loop/features/subscription/providers/subscription_controller.dart';
-import 'package:echo_loop/features/subscription/services/free_allowance_policy.dart';
 import 'package:echo_loop/features/subscription/state/entitlement_state.dart';
 import 'package:echo_loop/providers/settings_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,6 +34,7 @@ class _ScriptApi implements ChatApi {
   List<ChatMessage>? lastHistory;
   Map<String, Object?>? lastContext;
   String? lastTargetLanguage;
+  String? lastAccessToken;
   int callCount = 0;
 
   @override
@@ -50,6 +51,7 @@ class _ScriptApi implements ChatApi {
     lastHistory = history;
     lastContext = context;
     lastTargetLanguage = targetLanguage;
+    lastAccessToken = accessToken;
     return script(cancelToken);
   }
 
@@ -71,12 +73,6 @@ class _FixedSubscription extends SubscriptionController {
   final EntitlementState _state;
   @override
   EntitlementState build() => _state;
-}
-
-class _DenyPolicy implements FreeAllowancePolicy {
-  const _DenyPolicy();
-  @override
-  bool allows(PremiumFeature feature) => false;
 }
 
 Session _session() => Session(
@@ -118,8 +114,8 @@ void main() {
     _ScriptApi api, {
     bool authenticated = true,
     bool hasSession = true,
+    bool featureAccess = true,
     EntitlementState subscription = const EntitlementState.free(),
-    FreeAllowancePolicy policy = const AlwaysAllowPolicy(),
     bool holdListener = true,
   }) async {
     trialUsage = _RecordingTrialUsage();
@@ -134,7 +130,9 @@ void main() {
         subscriptionControllerProvider.overrideWith(
           () => _FixedSubscription(subscription),
         ),
-        freeAllowancePolicyProvider.overrideWithValue(policy),
+        featureAccessProvider(
+          PremiumFeature.aiChat,
+        ).overrideWithValue(featureAccess),
         aiTrialUsageProvider.overrideWith(() => trialUsage),
         appSettingsProvider.overrideWith(
           () =>
@@ -182,6 +180,18 @@ void main() {
     expect(trialUsage.consumeCount, 1);
     expect(api.lastContext, {'sentence': 'The fox'});
     expect(api.lastTargetLanguage, 'zh-CN');
+    expect(api.lastAccessToken, 'test-token');
+  });
+
+  test('自托管空 session → 使用 local token 发请求', () async {
+    final api = _ScriptApi((_) => okStream());
+    final c = await make(api, hasSession: false);
+
+    await ctrl(c).send('hi');
+
+    expect(api.callCount, 1);
+    expect(api.lastAccessToken, 'local');
+    expect(st(c).messages.last.status, ChatMessageStatus.done);
   });
 
   test('会员成功不 consume', () async {
@@ -211,7 +221,7 @@ void main() {
 
   test('已登录未解锁 send → gate=quotaExceeded，不发请求', () async {
     final api = _ScriptApi((_) => okStream());
-    final c = await make(api, policy: const _DenyPolicy());
+    final c = await make(api, featureAccess: false);
     await ctrl(c).send('hi');
     expect(st(c).gate, ChatGate.quotaExceeded);
     expect(api.callCount, 0);

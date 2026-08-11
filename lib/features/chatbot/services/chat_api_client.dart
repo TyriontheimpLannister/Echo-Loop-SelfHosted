@@ -114,7 +114,10 @@ class ChatApiClient implements ChatApi {
       options: Options(
         responseType: ResponseType.stream,
         validateStatus: (_) => true,
-        headers: {'Authorization': 'Bearer $accessToken'},
+        headers: {
+          'Authorization':
+              'Bearer ${accessToken.isNotEmpty ? accessToken : 'local'}',
+        },
       ),
       cancelToken: cancelToken,
     );

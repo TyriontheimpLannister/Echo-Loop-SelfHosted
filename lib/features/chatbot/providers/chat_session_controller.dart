@@ -147,14 +147,15 @@ class ChatSessionController extends _$ChatSessionController {
       state = state.copyWith(gate: ChatGate.authRequired);
       return;
     }
-    final accessToken = ref
+    // [自用补丁:local-chat] 官方 session 有 token 时照常使用；自托管
+    // 未配置 Supabase 时使用 local 占位，由局域网后端接收。
+    final sessionAccessToken = ref
         .read(supabaseSessionProvider)
         .valueOrNull
         ?.accessToken;
-    if (accessToken == null || accessToken.isEmpty) {
-      state = state.copyWith(gate: ChatGate.authRequired);
-      return;
-    }
+    final accessToken = sessionAccessToken == null || sessionAccessToken.isEmpty
+        ? 'local'
+        : sessionAccessToken;
     if (!ref.read(featureAccessProvider(PremiumFeature.aiChat))) {
       state = state.copyWith(gate: ChatGate.quotaExceeded);
       return;

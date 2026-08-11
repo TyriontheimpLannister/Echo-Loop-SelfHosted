@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
+import '../../features/chatbot/widgets/sentence_chat_button.dart';
 import '../../providers/sentence_ai_provider.dart';
 import '../../services/app_logger.dart';
 import '../../models/sense_group_result.dart';
@@ -1057,6 +1058,17 @@ class SentenceAnnotationCardState extends State<SentenceAnnotationCard> {
             state: _analysisState,
             content: _analysisContent,
           ),
+          if (_analysisState == ContentLoadState.loaded &&
+              _analysisContent != null) ...[
+            const SizedBox(height: AppSpacing.s),
+            Align(
+              alignment: Alignment.centerRight,
+              child: SentenceChatFollowUpButton(
+                sentenceText: widget.text,
+                onBeforeOpen: widget.onToolbarButtonTapped,
+              ),
+            ),
+          ],
         ],
       ),
     );

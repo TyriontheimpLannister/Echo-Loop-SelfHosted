@@ -582,6 +582,33 @@ void main() {
       expect(rendered.contains('语法分析'), isTrue);
       expect(rendered.contains('词汇分析'), isTrue);
       expect(rendered.contains('用法分析'), isTrue);
+      expect(
+        find.byKey(const ValueKey('sentence-chat-follow-up')),
+        findsOneWidget,
+      );
+      expect(find.text('Ask AI'), findsOneWidget);
+    });
+
+    testWidgets('解析内容到达前不显示追问入口', (tester) async {
+      final controller = StreamController<SentenceAnalysis>();
+      addTearDown(controller.close);
+
+      await tester.pumpWidget(
+        createTestApp(
+          SentenceAnnotationCard(
+            text: 'Hello',
+            onRequestAnalysis: (_, __) => controller.stream,
+          ),
+        ),
+      );
+
+      await tester.tap(find.byIcon(Icons.auto_awesome));
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('sentence-chat-follow-up')),
+        findsNothing,
+      );
     });
   });
 

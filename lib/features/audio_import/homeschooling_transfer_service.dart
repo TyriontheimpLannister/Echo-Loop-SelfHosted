@@ -151,6 +151,11 @@ class HomeSchoolingTransferService {
       if (error.response?.statusCode == 401) {
         throw const HomeSchoolingTransferException('家长密码不正确。');
       }
+      if (error.response?.statusCode == 404) {
+        throw const HomeSchoolingTransferException(
+          'HomeSchooling 听写接口不存在，请确认 HomeSchooling 服务地址正确且为最新版本。',
+        );
+      }
       final detail = error.response?.data;
       if (detail is Map && detail['detail'] is String) {
         final message = (detail['detail'] as String).trim();

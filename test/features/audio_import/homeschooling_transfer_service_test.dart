@@ -122,4 +122,36 @@ void main() {
       ),
     );
   });
+
+  test('maps a missing import endpoint to a local actionable message', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://homeschooling.test'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              response: Response(
+                requestOptions: options,
+                statusCode: 404,
+                data: {'detail': 'Not Found'},
+              ),
+              type: DioExceptionType.badResponse,
+            ),
+          );
+        },
+      ),
+    );
+
+    expect(
+      () => HomeSchoolingTransferService(dio: dio).loadChildren('parent-password'),
+      throwsA(
+        isA<HomeSchoolingTransferException>().having(
+          (error) => error.message,
+          'message',
+          'HomeSchooling 听写接口不存在，请确认 HomeSchooling 服务地址正确且为最新版本。',
+        ),
+      ),
+    );
+  });
 }

@@ -46,6 +46,7 @@ import '../widgets/practice/practice_play_count_label.dart';
 import '../widgets/practice/practice_normal_mode_view.dart';
 import '../widgets/practice/practice_progress_section.dart';
 import '../providers/new_user_guide_provider.dart';
+import '../features/chatbot/widgets/sentence_chat_button.dart';
 
 /// 精听播放器页面
 class IntensiveListenPlayerScreen extends ConsumerStatefulWidget {
@@ -701,6 +702,17 @@ class _IntensiveListenPlayerScreenState
                   onPressed: _handleExit,
                 ),
                 actions: [
+                  // AI 助手入口：打开前暂停自动推进（同设置按钮的处理）。
+                  SentenceChatButton(
+                    sentenceText: currentSentence?.text ?? '',
+                    onBeforeOpen: () {
+                      if (playerState.annotationState != null) {
+                        player.onAnnotationUserInteraction();
+                      } else {
+                        player.enterWaitingForUserInBlindMode();
+                      }
+                    },
+                  ),
                   IconButton(
                     icon: const Icon(Icons.tune),
                     onPressed: () {
