@@ -11,18 +11,15 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
-
 # IntelliJ related
 *.iml
 *.ipr
 *.iws
 .idea/
-
 # The .vscode folder contains launch configuration and tasks you configure in
 # VS Code which you may wish to be included in version control, so this line
 # is commented out by default.
 #.vscode/
-
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id
@@ -33,29 +30,28 @@ migrate_working_dir/
 /build/
 /coverage/
 ios/AuthKey_*.p8
-
 .prod.env
 .dev.env
-
 # Symbolication related
 app.*.symbols
-
 # Obfuscation related
 app.*.map.json
-
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
 /android/app/release
 /android/build/
 macos/build/
-
 # Private documents (not for open source)
 METHOD.md
-
 # Claude Code runtime files
 .claude/scheduled_tasks.lock
-
 # Test artifacts
 test-results.json
 echoloop-deploy-kit/echoloop-deploy-kit/backend.from-prod/.env
+echoloop-deploy-kit/echoloop-deploy-kit/backend/updates/
+echoloop-deploy-kit/echoloop-deploy-kit/backend/uploads/
+echoloop-deploy-kit/echoloop-deploy-kit/backend/homeschooling_packages/
+echoloop-deploy-kit/echoloop-deploy-kit/backend.from-prod/updates/
+echoloop-deploy-kit/echoloop-deploy-kit/backend.from-prod/uploads/
+echoloop-deploy-kit/echoloop-deploy-kit/backend.from-prod/homeschooling_packages/
